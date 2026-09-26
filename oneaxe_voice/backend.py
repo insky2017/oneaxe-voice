@@ -52,6 +52,26 @@ class QwenEngine:
         with self._state_lock:
             return dict(self._state)
 
+    def warmup(self) -> dict[str, Any]:
+        """Load the existing CUDA model before the first phrase needs inference."""
+        if not self._gate.acquire(blocking=False):
+            raise BusyError("GPU 正在处理请求，请稍后预热")
+        self._update(busy=True, last_error=None)
+        try:
+            self._load()
+            self._torch.cuda.synchronize(self.settings.cuda_device)
+            return self.status()
+        except Exception as exc:
+            if self._torch is not None and isinstance(exc, self._torch.cuda.OutOfMemoryError):
+                self._release()
+                raise GPUError("预热时显存不足或达到本服务上限") from exc
+            self._update(state="ready" if self._model is not None else "unloaded", last_error=str(exc))
+            raise
+        finally:
+            self._last_used = time.monotonic()
+            self._update(busy=False)
+            self._gate.release()
+
     def _load(self) -> None:
         """Load local weights entirely on CUDA and verify all parameter devices."""
         if self._model is not None:

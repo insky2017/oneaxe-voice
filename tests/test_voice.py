@@ -93,6 +93,11 @@ class StubEngine:
         """Report that this test double owns no real model."""
         return {"model_loaded": False, "busy": False}
 
+    def warmup(self):
+        if self.error:
+            raise self.error
+        return {"model_loaded": True, "device": "cuda:0"}
+
     def unload_if_idle(self, force=False):
         """Match the lifecycle interface without changing global state."""
         return False
@@ -128,6 +133,15 @@ class APITests(unittest.TestCase):
         self.assertEqual(self.client.get("/health").status_code, 200)
         self.assertEqual(self.engine.calls, 0)
         self.assertEqual(self.client.get("/api/dictation/status").status_code, 401)
+
+    def test_warmup_requires_auth_and_reports_device_and_busy(self):
+        self.assertEqual(self.client.post("/api/dictation/warmup").status_code, 401)
+        response = self.client.post("/api/dictation/warmup", headers=self.headers)
+        self.assertEqual(response.json(), {"model_loaded": True, "device": "cuda:0"})
+        self.engine.error = BusyError("busy")
+        self.assertEqual(self.client.post("/api/dictation/warmup", headers=self.headers).status_code, 429)
+        self.engine.error = GPUError("no CUDA")
+        self.assertEqual(self.client.post("/api/dictation/warmup", headers=self.headers).status_code, 503)
 
     def test_auth_required_before_transcription(self):
         """An unauthorized request cannot enter the model worker."""

@@ -124,6 +124,23 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
         if not task.cancelled():
             task.exception()
 
+    @app.post("/api/dictation/warmup")
+    async def warmup():
+        """Warm up the same single GPU worker without accepting or logging audio."""
+        task = asyncio.create_task(asyncio.to_thread(engine.warmup))
+        pending.add(task)
+        task.add_done_callback(completed)
+        try:
+            result = await asyncio.shield(task)
+        except BusyError as exc:
+            raise HTTPException(429, str(exc), headers={"Retry-After": "2"}) from exc
+        except GPUError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except Exception as exc:
+            LOGGER.exception("warmup_failed")
+            raise HTTPException(500, "模型预热失败，请检查服务日志") from exc
+        return {"model_loaded": result["model_loaded"], "device": result["device"]}
+
     @app.post("/api/dictation/transcribe")
     async def transcribe(file: UploadFile = File(...)):
         """Return text for one short recording, keeping CUDA work single-file."""

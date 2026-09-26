@@ -51,15 +51,30 @@ def paste_key(wm_class: str) -> str:
     return "ctrl+v"
 
 
-def deliver(value: str, target: Target, clipboard_only: bool = False) -> str:
+def copy_text(value: str) -> None:
+    """Own the clipboard without generating a key event."""
+    subprocess.run(
+        ["xclip", "-selection", "clipboard", "-in"], input=value.encode("utf-8"),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=3,
+    )
+
+
+def append_delta(previous: str, text: str) -> str:
+    """Keep separate English words readable when appending recognized segments."""
+    if (previous and text and previous[-1].isascii() and text[0].isascii()
+            and text[0].isalnum() and not previous[-1].isspace()):
+        return " " + text
+    return text
+
+
+def deliver(value: str, target: Target, clipboard_only: bool = False, *, prefix: str = "") -> str:
     """Leave text on the clipboard; paste only while the recorded target still matches."""
     text = plain_text(value)
     if not text:
         return "empty"
-    subprocess.run(
-        ["xclip", "-selection", "clipboard", "-in"], input=text.encode("utf-8"),
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=3,
-    )
+    if prefix not in {"", " "}:
+        raise ValueError("粘贴前缀只允许一个空格")
+    copy_text(prefix + text)
     if clipboard_only:
         return "copied"
     try:

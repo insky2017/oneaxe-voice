@@ -13,6 +13,7 @@ dependencies = [
   "httpx>=0.28,<0.29",
   "python-multipart>=0.0.22",
   "qwen-asr==0.0.6",
+  "webrtcvad-wheels==2.0.14",
 ]
 
 [project.scripts]
