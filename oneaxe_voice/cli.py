@@ -1,11 +1,13 @@
 """Local command-line client; proxy settings never affect loopback requests."""
 
 import argparse
+import asyncio
 import json
 import os
 from pathlib import Path
 import secrets
 import sys
+import subprocess
 from urllib.parse import urlsplit
 
 import httpx
@@ -48,6 +50,14 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("init", help="生成仅供本机客户端使用的令牌")
     commands.add_parser("health", help="检查 HTTP 服务")
     commands.add_parser("status", help="检查模型、设备和忙碌状态")
+    commands.add_parser("devices", help="列出麦克风输入设备")
+    commands.add_parser("toggle", help="开始录音，或结束录音并识别输入")
+    commands.add_parser("cancel", help="取消本次桌面听写")
+    commands.add_parser("desktop-status", help="查看录音、识别和粘贴状态")
+    commands.add_parser("desktop-run", help="运行桌面录音控制服务")
+    setup = commands.add_parser("desktop-setup", help="安装 GNOME 桌面服务与全局快捷键")
+    setup.add_argument("--shortcut", default="F8")
+    setup.add_argument("--remove", action="store_true", help="移除本项目的快捷键并停止桌面服务")
     transcribe = commands.add_parser("transcribe", help="识别 0.1–60 秒 PCM WAV")
     transcribe.add_argument("audio", type=Path)
     transcribe.add_argument("--json", action="store_true", help="输出完整结果和耗时")
@@ -57,6 +67,28 @@ def main(argv: list[str] | None = None) -> int:
         settings = Settings.from_env()
         if args.command == "init":
             initialize(settings)
+            return 0
+        if args.command == "devices":
+            from .capture import sources
+            print(json.dumps([{k: item[k] for k in ("name", "description", "mute")}
+                              for item in sources()], ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "desktop-setup":
+            from .desktop_setup import install_desktop, remove_shortcut
+            if args.remove:
+                remove_shortcut()
+            else:
+                initialize(settings)
+                install_desktop(settings, args.shortcut)
+            return 0
+        if args.command == "desktop-run":
+            from .desktop import serve
+            asyncio.run(serve(settings))
+            return 0
+        if args.command in {"toggle", "cancel", "desktop-status"}:
+            from .desktop import control
+            action = "status" if args.command == "desktop-status" else args.command
+            print(json.dumps(control(settings, action), ensure_ascii=False, indent=2))
             return 0
         url = local_url(args.url)
         headers = {}
@@ -95,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
-    except (OSError, ValueError, httpx.HTTPError) as exc:
+    except (OSError, ValueError, httpx.HTTPError, subprocess.SubprocessError) as exc:
         print(f"OneAxe Voice: {exc}", file=sys.stderr)
         return 2
 

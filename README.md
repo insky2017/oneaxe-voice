@@ -1,6 +1,23 @@
 # OneAxe Voice
 
-本机 GPU 听写工具。第一阶段提供短 WAV 录音转文字接口及命令行客户端。
+本机 GPU 听写工具。支持 DJI Mic 录音、F8 全局快捷键、本地 Qwen3-ASR 识别及 X11 自动粘贴，也提供短 WAV API 和命令行客户端。
+
+## 桌面听写
+
+连接 DJI Mic，把光标放在输入位置，按 **F8** 开始说话，再按 **F8** 结束。识别完成后自动输入文字，不发送回车。切换窗口时结果留在剪贴板，由通知提示手动粘贴。
+
+桌面通知显示录音、识别及完成状态。每次最多录 60 秒，低电平录音会跳过识别。使用 GNOME X11；没有 DJI 设备时会提示，不会改用内置麦克风。
+
+首次安装或移动项目目录后运行：
+
+    ./bin/oneaxe-voice desktop-setup --shortcut F8
+
+查看状态或取消当前听写：
+
+    ./bin/oneaxe-voice desktop-status
+    ./bin/oneaxe-voice cancel
+
+完整设置、卸载快捷键及输入行为见 [桌面听写说明](docs/desktop.md)。
 
 ## 使用
 
@@ -18,6 +35,7 @@
 ## 文档
 
 - [架构与隔离边界](docs/architecture.md)
+- [桌面听写说明](docs/desktop.md)
 - [接口与运行说明](docs/api.md)
 - [验证记录](docs/validation.md)
 - [实施计划](docs/plan.md)
@@ -29,7 +47,7 @@
     journalctl --user -u oneaxe-voice.service -n 50
 
 服务单元的源文件位于 systemd/oneaxe-voice.service。
-本阶段仅启动服务，没有启用登录自启。
+没有启用登录自启；F8 会按需启动已安装的桌面服务及其依赖的 ASR 服务。
 
 ## 开发验证
 

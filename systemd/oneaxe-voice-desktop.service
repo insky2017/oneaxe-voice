@@ -1,0 +1,19 @@
+[Unit]
+Description=OneAxe Voice X11 microphone and paste controller
+After=graphical-session.target oneaxe-voice.service
+Wants=oneaxe-voice.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory={{PROJECT_DIR}}
+ExecStart={{DESKTOP_COMMAND}}
+{{DESKTOP_ENVIRONMENT}}
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+
+[Install]
+WantedBy=graphical-session.target
