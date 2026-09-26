@@ -1,0 +1,24 @@
+[Unit]
+Description=OneAxe Voice local GPU dictation API
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory={{PROJECT_DIR}}
+ExecStart={{SERVE_COMMAND}}
+Environment=PYTHONUNBUFFERED=1
+Environment=HF_HUB_OFFLINE=1
+Environment=TRANSFORMERS_OFFLINE=1
+Environment=TOKENIZERS_PARALLELISM=false
+Environment=ONEAXE_VOICE_MEMORY_FRACTION=0.25
+Environment=ONEAXE_VOICE_IDLE_SECONDS=120
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=200
+Nice=5
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

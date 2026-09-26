@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+"""Install the user-level systemd unit for the current checkout."""
+
+from pathlib import Path
+import runpy
+
+installer = Path(__file__).resolve().parent.parent / "oneaxe_voice" / "install.py"
+runpy.run_path(str(installer), run_name="__main__")
