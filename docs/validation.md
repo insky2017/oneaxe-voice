@@ -203,7 +203,7 @@ Qwen 使用官方 `qwen-asr==0.0.6` 的 vLLM streaming API；独立环境为 vLL
 
 ### 自动化与隔离边界
 
-63 项测试通过，覆盖原有功能以及流式鉴权、Origin 拒绝、PCM 限制、顺序与尾部、断开取消、整轮互斥、模式切换释放、数字静音、R2T2 初始前瞻、Qwen 窗口及前缀保护、准备失败后重试、禁用空闲卸载、菜单暂停、下轮模式和私有字幕。编译、Shell 语法、systemd 用户单元、文档链接、Git 空白和可移植路径检查通过。原样保留的 vendor 文件含上游行尾空白，`.gitattributes` 对其关闭空白检查，来源文件哈希仍严格相同。
+65 项测试通过，覆盖原有功能以及流式鉴权、Origin 拒绝、PCM 限制、顺序与尾部、断开取消、整轮互斥、模式切换释放、数字静音、R2T2 初始前瞻、Qwen 窗口及前缀保护、准备失败后重试、禁用空闲卸载、菜单暂停、下轮模式、私有字幕与安装器的 GNOME 图标宿主启用。编译、Shell 语法、systemd 用户单元、文档链接、Git 空白和可移植路径检查通过。原样保留的 vendor 文件含上游行尾空白，`.gitattributes` 对其关闭空白检查，来源文件哈希仍严格相同。
 
 VPlus 始终为 PID `7301`，启动时间 `2026-09-30 23:20:01 CST`；其已有 `git diff` 哈希仍为 `6e831263476ed5a2817831fb03b46c86e84a946cb8fd1c2d4b12fd944bcb5281`，与本轮开始前相同。未重复 tmux 验证。独立 X11 测试没有占用真实桌面的焦点或剪贴板；生产设置保留 DJI 自动选择。
 
@@ -224,3 +224,9 @@ VPlus 始终为 PID `7301`，启动时间 `2026-09-30 23:20:01 CST`；其已有 
 额外一轮 R2T2 通过真实 DBusMenu opened/closed/clicked 事件检查菜单暂停/恢复；录音时选择稳听，正在处理的模型仍为 R2T2，下一轮选择保存为稳听。随后切到另一个输入框，确认其中没有被输入文字；取消后两处输入框均不再收到文字，队列清空，API worker 卸载，nvidia-smi 中对应 CUDA 子进程消失。
 
 证据留在本机忽略目录：`work/final-isolated-e2e.log`、`work/stream-e2e.json`、`work/stream-controls-e2e.json`。测试结束关闭独立显示器、测试窗口和服务，卸载音频模块。生产模式与 DJI 配置不受这些隔离测试修改。
+
+### 本机部署复核
+
+最终仅更新并重启 OneAxe Voice 的 API、桌面和顶栏三个用户服务，三者均 active；顶栏单元 enabled。生产配置字节级保持不变，仍选择 R2T2、DJI 自动选择和实时字幕。VPlus `/health` 为 HTTP 200，PID/启动时间及代码差异继续与基线一致。
+
+发布前发现 GNOME 扩展总开关关闭，安装器现会开启已有 AppIndicator 扩展及所需总开关，并增加回归测试。当前实机已持久启用；最终检查时 `ScreenSaver.GetActive=true`，GNOME 的 Dock 和 AppIndicator 同处 INACTIVE，这是锁屏状态。此前未锁屏时已验证真实顶栏显示和菜单；此时没有尝试绕过锁屏，解锁后的再次视觉检查留给用户正常使用。

@@ -30,6 +30,8 @@ sudo apt install python3-gi python3-cairo gir1.2-gtk-3.0 \
   gnome-shell-extension-appindicator
 ```
 
+桌面安装器会启用已安装的 GNOME AppIndicator 扩展；如果 GNOME 的扩展总开关已关闭，也会开启它，使顶栏能显示图标。锁屏时 GNOME 会暂停这类扩展，解锁后恢复；无需用其锁屏状态判断安装是否失败。
+
 新流式环境独立于现有 `.venv` 与 VPlus。使用官方 Qwen 依赖组合：
 
 ```bash

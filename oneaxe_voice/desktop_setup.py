@@ -18,6 +18,18 @@ CUSTOM_PATH = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/
 CUSTOM_SCHEMA = MEDIA_SCHEMA + ".custom-keybinding:" + CUSTOM_PATH
 
 
+def enable_indicator_host() -> None:
+    """Ensure GNOME can actually display an installed AppIndicator client."""
+    installed = run("gnome-extensions", "list").splitlines()
+    candidates = ("ubuntu-appindicators@ubuntu.com", "appindicatorsupport@rgcjonas.gmail.com")
+    extension = next((name for name in candidates if name in installed), None)
+    if extension is None:
+        raise ValueError("缺少 GNOME AppIndicator 扩展，请参阅 docs/modes.md")
+    if run("gsettings", "get", "org.gnome.shell", "disable-user-extensions") == "true":
+        run("gsettings", "set", "org.gnome.shell", "disable-user-extensions", "false")
+    run("gnome-extensions", "enable", extension)
+
+
 def run(*args: str) -> str:
     return subprocess.run(args, text=True, capture_output=True, check=True, timeout=20).stdout.strip()
 
@@ -48,7 +60,7 @@ def install_desktop(settings: Settings, shortcut: str) -> None:
     """Install local units and enable the indicator with the graphical session."""
     if os.environ.get("XDG_SESSION_TYPE") != "x11":
         raise ValueError("目前仅支持 GNOME X11 桌面")
-    for tool in ("parec", "pactl", "xdotool", "xprop", "xclip", "notify-send", "gsettings"):
+    for tool in ("parec", "pactl", "xdotool", "xprop", "xclip", "notify-send", "gsettings", "gnome-extensions"):
         if shutil.which(tool) is None:
             raise ValueError(f"缺少桌面依赖：{tool}")
     try:
@@ -58,6 +70,7 @@ def install_desktop(settings: Settings, shortcut: str) -> None:
     except subprocess.CalledProcessError as exc:
         raise ValueError("缺少 GTK / Ayatana AppIndicator 桌面依赖，请参阅 docs/modes.md") from exc
     verify_shortcut(shortcut)
+    enable_indicator_host()
     api_unit = install_api()
     project_dir = ROOT.resolve()
     template = (project_dir / "systemd/oneaxe-voice-desktop.service").read_text()
