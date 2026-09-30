@@ -2,6 +2,8 @@
 
 ## 使用
 
+下述 700 ms 分段适用于默认“稳听”。顶栏还可选择“随听”和“即听”流式模式，安装和行为见 [三模式说明](modes.md)。
+
 1. 连接 DJI 接收器并开启麦克风发射器，将光标放入要输入文字的位置。
 2. 按 **F8** 开始持续录音。停顿约 700 ms 时自动识别上一段，文字逐段追加。
 3. 再按 **F8** 停止采集，剩余语音识别完毕后结束本轮。保持目标窗口及输入位置不变。
@@ -33,9 +35,9 @@
 ./bin/oneaxe-voice desktop-setup --shortcut F8
 ```
 
-安装器按当前项目实际路径渲染两个用户级服务，并注册一个 GNOME 自定义快捷键。服务模板保存在仓库，生成的本机路径只出现在用户配置中。已有 API 服务软链接会被原子替换为生成的单元文件，不会写回模板。安装保留其他自定义快捷键，遇到已存在的 GNOME F8 绑定会报错；其他应用自行注册的全局快捷键仍可能冲突。
+安装器按当前项目实际路径渲染三个用户级服务，并注册一个 GNOME 自定义快捷键。服务模板保存在仓库，生成的本机路径只出现在用户配置中。已有 API 服务软链接会被原子替换为生成的单元文件，不会写回模板。安装保留其他自定义快捷键，遇到已存在的 GNOME F8 绑定会报错；其他应用自行注册的全局快捷键仍可能冲突。
 
-当前服务已启动，没有 enable 登录自启。F8 的命令行入口会按需启动桌面服务，桌面服务通过 `Wants` 启动 OneAxe Voice ASR。移动项目后重新运行安装命令以更新服务与快捷键路径。重新登录若显示环境变化，也可重新运行该命令。
+顶栏服务随图形会话启动，带起桌面控制和轻量 API，GPU 模型按需加载。F8 的命令行入口会按需启动桌面服务，桌面服务通过 `Wants` 启动 OneAxe Voice ASR。移动项目后重新运行安装命令以更新服务与快捷键路径。重新登录若显示环境变化，也可重新运行该命令。
 
 ```bash
 systemctl --user status oneaxe-voice-desktop.service
@@ -43,7 +45,7 @@ journalctl --user -u oneaxe-voice-desktop.service -n 50 --no-pager
 ./bin/oneaxe-voice desktop-setup --remove
 ```
 
-移除操作只删除本项目的快捷键并停止桌面控制器。需要停止 GPU 服务时另行运行 `systemctl --user stop oneaxe-voice.service`。
+移除操作只删除本项目的快捷键、禁用顶栏自启并停止桌面控制器。需要停止 GPU 服务时另行运行 `systemctl --user stop oneaxe-voice.service`。
 
 ## 麦克风配置
 
@@ -51,6 +53,9 @@ journalctl --user -u oneaxe-voice-desktop.service -n 50 --no-pager
 
 | 配置 | 默认值 | 含义 |
 | --- | --- | --- |
+| `mode` | `vad` | `vad` / `qwen-stream` / `r2t2`；录音中选择下轮生效 |
+| `preview` | `true` | 显示不抢焦点的候选字幕 |
+| `icon_theme` | `light` | `light` 适合深色顶栏，`dark` 适合浅色顶栏 |
 | `source` | `null` | 自动选择 DJI；指定字符串时须与 devices 的 name 完全相同 |
 | `pause_ms` | `700` | 连续无人声分段阈值，范围 300–2000 ms |
 | `segment_seconds` | `15` | 单段最大秒数，范围 3–30 |

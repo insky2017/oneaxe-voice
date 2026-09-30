@@ -1,0 +1,2 @@
+# Preserve upstream files byte-for-byte, including their original whitespace.
+vendor/r2t2/* -whitespace

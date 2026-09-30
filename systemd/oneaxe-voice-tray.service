@@ -1,0 +1,19 @@
+[Unit]
+Description=OneAxe Voice status indicator and live captions
+After=graphical-session.target oneaxe-voice-desktop.service
+Wants=oneaxe-voice-desktop.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory={{PROJECT_DIR}}
+ExecStart={{TRAY_COMMAND}}
+{{DESKTOP_ENVIRONMENT}}
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+
+[Install]
+WantedBy=graphical-session.target

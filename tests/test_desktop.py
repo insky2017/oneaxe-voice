@@ -195,6 +195,37 @@ class DesktopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item[0] for item in self.outputs], expected)
         self.assertEqual((self.settings.runtime_dir / 'last-transcript.txt').read_text(), ''.join(expected))
 
+    async def test_mode_switch_during_recording_applies_to_next_session(self):
+        await self.start_recording()
+        await self.desktop.dispatch('configure', mode='r2t2')
+        self.assertEqual(self.desktop.status()['selected_mode'], 'r2t2')
+        self.assertEqual(self.desktop.status()['mode'], 'vad')
+        self.assertIsNone(self.desktop.prepare_task)
+        await self.segments.put(self.segment())
+        await self.eventually(lambda: len(self.outputs) == 1)
+        await self.finish()
+
+    async def test_menu_pauses_delivery_then_resumes_without_changing_target(self):
+        await self.start_recording()
+        await self.desktop.dispatch('menu', opened=True)
+        await self.segments.put(self.segment())
+        await asyncio.sleep(.1)
+        self.assertFalse(self.outputs)
+        await self.desktop.dispatch('menu', opened=False)
+        await self.eventually(lambda: len(self.outputs) == 1)
+        self.assertFalse(self.desktop.only_copy)
+        await self.finish()
+
+    async def test_status_hides_preview_and_invalid_settings_do_not_persist(self):
+        self.desktop.preview = 'private transcript'
+        self.assertNotIn('preview', self.desktop.status())
+        self.assertEqual((await self.desktop.dispatch('ui'))['preview'], 'private transcript')
+        with self.assertRaises(ValueError):
+            await self.desktop.dispatch('configure', mode='unknown')
+        with self.assertRaises(ValueError):
+            await self.desktop.dispatch('configure', pause_ms=0)
+        self.assertFalse((self.settings.runtime_dir / 'desktop.json').exists())
+
     async def test_warmup_does_not_block_capture(self):
         self.allow_warmup.clear()
         await self.start_recording()

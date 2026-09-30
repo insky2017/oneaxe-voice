@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+project_dir="$(cd -- "$(dirname -- "$0")/.." && pwd)"
+# This environment belongs only to the streaming worker. No VPlus packages change.
+if [[ ! -x "$project_dir/.venv-stream/bin/python" ]]; then
+  python3 -m venv "$project_dir/.venv-stream"
+fi
+"$project_dir/.venv-stream/bin/python" -m pip install -r "$project_dir/requirements-stream.txt"

@@ -17,9 +17,10 @@ import uuid
 
 import httpx
 
-from .capture import CaptureError, pack_recording, segment_recordings, select_source, sources
+from .capture import CaptureError, pack_recording, pcm_chunks, segment_recordings, select_source, sources
 from .config import Settings
 from .paste import append_delta, copy_text, current_target, deliver, plain_text
+from .modes import MODES, validate_mode
 
 LOGGER = logging.getLogger(__name__)
 
@@ -27,11 +28,13 @@ LOGGER = logging.getLogger(__name__)
 def preferences(settings: Settings) -> dict:
     """Read local preferences; source=None means a uniquely identified DJI device."""
     path = settings.runtime_dir / "desktop.json"
-    value = {"source": None, "clipboard_only": False, "shortcut": "F8",
+    value = {"source": None, "clipboard_only": False, "shortcut": "F8", "mode": "vad", "preview": True,
+             "icon_theme": "light",
              "pause_ms": 700, "segment_seconds": 15, "max_session_seconds": 900,
              "vad_mode": 2, "vad_min_dbfs": -60, "queue_size": 8}
     if path.exists():
         value.update(json.loads(path.read_text()))
+    validate_mode(value["mode"])
     for key, low, high in (("pause_ms", 300, 2000), ("segment_seconds", 3, 30),
                            ("max_session_seconds", 10, 3600), ("vad_min_dbfs", -100, 0)):
         value[key] = float(value[key])
@@ -67,6 +70,13 @@ class Desktop:
         self.stop = asyncio.Event()
         self.started = 0.0
         self.last_toggle = 0.0
+        self.prepare_task = None
+        self.menu_until = 0.0
+        self.preview = ""
+        self.full_text = ""
+        self.records = []
+        self.only_copy = False
+        self.session_id = ""
         self.state = {"state": "idle", "last_action": None, "last_error": None,
                       "capture_active": False, "recognizing": False}
 
@@ -74,10 +84,50 @@ class Desktop:
         value = dict(self.state)
         value["elapsed_seconds"] = round(time.monotonic() - self.started, 1) if self.task else 0
         value["pid"] = os.getpid()
+        config = preferences(self.settings)
+        value["selected_mode"] = config["mode"]
+        value.setdefault("mode", config["mode"])
+        value["preparing"] = self.prepare_task is not None
+        value["preview_enabled"] = config["preview"]
+        value["clipboard_only"] = config["clipboard_only"]
+        value["menu_paused"] = time.monotonic() < self.menu_until
         return value
 
-    async def dispatch(self, action: str) -> dict:
+    async def dispatch(self, action: str, **options) -> dict:
         if action == "status":
+            return self.status()
+        if action == "ui":
+            if options.get("menu_open"):
+                self.menu_until = time.monotonic() + 3
+            return {**self.status(), "preview": self.preview[-600:]}
+        if action == "menu":
+            self.menu_until = time.monotonic() + (3 if options.get("opened") else .3)
+            return self.status()
+        if action == "configure":
+            config = preferences(self.settings)
+            for key, value in options.items():
+                if key == "mode":
+                    validate_mode(value)
+                elif key == "icon_theme" and value in {"light", "dark"}:
+                    pass
+                elif key == "source" and (value is None or isinstance(value, str)):
+                    pass
+                elif key == "pause_ms" and isinstance(value, (float, int)) and 300 <= value <= 2000:
+                    pass
+                elif key == "max_session_seconds" and isinstance(value, (float, int)) and 10 <= value <= 3600:
+                    pass
+                elif key not in {"preview", "clipboard_only"} or not isinstance(value, bool):
+                    raise ValueError("不支持的桌面设置")
+                config[key] = value
+            self._atomic_json("desktop.json", config)
+            if "mode" in options and not self.task and self.prepare_task is None:
+                self.prepare_task = asyncio.create_task(self._prepare_selected())
+            return self.status()
+        if action == "copy":
+            path = self.settings.runtime_dir / "last-transcript.txt"
+            text = self.full_text or (path.read_text() if path.exists() else "")
+            if text:
+                await asyncio.to_thread(copy_text, text)
             return self.status()
         if action == "cancel":
             if self.task:
@@ -98,14 +148,47 @@ class Desktop:
             else:
                 await notify("OneAxe Voice 正在收尾", "剩余语音按顺序识别，完成后可开启下一轮")
             return self.status()
+        config = preferences(self.settings)
         self.state = {"state": "starting", "last_action": None, "last_error": None,
                       "capture_active": True, "recognizing": False, "warming": True,
                       "segments_done": 0, "segments_pasted": 0, "queued_segments": 0,
-                      "voice_active": False, "audio_seconds": 0}
+                      "voice_active": False, "audio_seconds": 0, "mode": config["mode"]}
+        self.preview, self.full_text, self.records = "", "", []
+        self.session_id = str(uuid.uuid4())
+        self.only_copy = config["clipboard_only"]
         self.started = now
         self.stop = asyncio.Event()
         self.task = asyncio.create_task(self.dictate())
         return self.status()
+
+    def _atomic_json(self, name, value):
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=self.settings.runtime_dir, delete=False) as f:
+            temporary = Path(f.name)
+            json.dump(value, f, ensure_ascii=False, indent=2)
+        try:
+            temporary.replace(self.settings.runtime_dir / name)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    async def _prepare_selected(self):
+        try:
+            token = self.settings.token_path.read_text().strip()
+            async with httpx.AsyncClient(base_url=self.settings.api_url, trust_env=False,
+                                         timeout=250, headers={"Authorization": "Bearer " + token}) as client:
+                while True:
+                    mode = preferences(self.settings)["mode"]
+                    self.state.update(preparing_mode=mode, last_error=None)
+                    await self._request(client, "/api/dictation/prepare", json={"mode": mode})
+                    if mode == preferences(self.settings)["mode"] or self.task:
+                        break
+        except Exception:
+            self.state["last_error"] = "模式加载失败，可重试或切回稳听；详情见本机日志"
+        finally:
+            self.prepare_task = None
+
+    async def _wait_menu(self):
+        while time.monotonic() < self.menu_until:
+            await asyncio.sleep(.05)
 
     async def _request(self, client, path, **kwargs):
         """Retry only explicit busy rejections; never resubmit an uncertain request."""
@@ -122,6 +205,8 @@ class Desktop:
 
     async def _warmup(self, client):
         try:
+            if self.prepare_task:
+                await asyncio.shield(self.prepare_task)
             return await self._request(client, "/api/dictation/warmup")
         finally:
             self.state["warming"] = False
@@ -173,10 +258,6 @@ class Desktop:
                 temporary.unlink(missing_ok=True)
 
     async def _consume(self, client, warmup, queue, target, config):
-        accumulated = ""
-        records = []
-        session_id = str(uuid.uuid4())
-        clipboard_only = bool(config["clipboard_only"])
         while True:
             segment = await queue.get()
             self.state["queued_segments"] = queue.qsize()
@@ -195,54 +276,144 @@ class Desktop:
                               segments_done=self.state["segments_done"] + 1)
             if not text:
                 continue
-            delta = append_delta(accumulated, text)
-            accumulated += delta
-            records.append({"sequence": self.state["segments_done"], "text": result["text"],
-                            "reason": segment.reason, "audio_seconds": recording.seconds,
-                            "request_id": result["request_id"],
-                            "received_at_seconds": round(time.monotonic() - self.started, 3)})
-            self._save(session_id, accumulated, records)
-            payload = accumulated if clipboard_only else text
-            self.delivery_task = asyncio.create_task(asyncio.to_thread(
-                deliver, payload, target, clipboard_only,
-                prefix=" " if not clipboard_only and delta.startswith(" ") else "",
-            ))
-            try:
-                # A key event dispatched to X11 cannot be recalled on cancellation.
-                action = await asyncio.shield(self.delivery_task)
-            finally:
-                await asyncio.gather(self.delivery_task, return_exceptions=True)
-                self.delivery_task = None
-            if action == "focus_changed":
-                clipboard_only = True  # Sticky until a fresh F8 session is started.
-                self.state["paste_paused"] = True
-                await asyncio.to_thread(copy_text, accumulated)
-                await notify("OneAxe Voice 已改为复制", "窗口发生变化，本轮后续内容只累积到剪贴板")
-            if action == "pasted":
-                self.state["segments_pasted"] += 1
-            self.state["last_action"] = action
+            accumulated = self.full_text + append_delta(self.full_text, text)
+            self.preview = accumulated[-600:]
+            await self._publish(accumulated, result["text"], segment.reason,
+                                recording.seconds, result["request_id"], target)
+
+    async def _publish(self, accumulated, raw, reason, seconds, request_id, target):
+        if not accumulated.startswith(self.full_text):
+            raise CaptureError("流式结果修改了已输入文字，已停止本轮；全文保存在本机")
+        delta = accumulated[len(self.full_text):]
+        if not delta:
+            return
+        self.full_text = accumulated
+        self.records.append({"sequence": self.state["segments_done"], "text": raw,
+                             "reason": reason, "audio_seconds": seconds, "request_id": request_id,
+                             "mode": self.state["mode"],
+                             "received_at_seconds": round(time.monotonic() - self.started, 3)})
+        self._save(self.session_id, accumulated, self.records)
+        await self._wait_menu()
+        payload = accumulated if self.only_copy else delta
+        self.delivery_task = asyncio.create_task(asyncio.to_thread(
+            deliver, payload, target, self.only_copy,
+            prefix=" " if not self.only_copy and delta.startswith(" ") else "",
+        ))
+        try:
+            action = await asyncio.shield(self.delivery_task)
+        finally:
+            await asyncio.gather(self.delivery_task, return_exceptions=True)
+            self.delivery_task = None
+        if action == "focus_changed":
+            self.only_copy = True
+            self.state["paste_paused"] = True
+            await asyncio.to_thread(copy_text, accumulated)
+            await notify("OneAxe Voice 已改为复制", "窗口发生变化，本轮后续内容只累积到剪贴板")
+        if action == "pasted":
+            self.state["segments_pasted"] += 1
+        self.state["last_action"] = action
+
+    async def _produce_stream(self, source, config, queue):
+        total = 0
+        pending = bytearray()
+        overflow = None
+        async with aclosing(pcm_chunks(source, self.stop, config["max_session_seconds"])) as stream:
+            async for chunk in stream:
+                pending.extend(chunk)
+                total += len(chunk)
+                self.state["audio_seconds"] = round(total / 32000, 2)
+                while len(pending) >= 5120:
+                    data = bytes(pending[:5120])
+                    del pending[:5120]
+                    try:
+                        queue.put_nowait(data)
+                    except asyncio.QueueFull:
+                        overflow = data
+                        self.stop.set()
+                        self.state["stopped_reason"] = "backlog"
+                        break
+                self.state["queued_segments"] = queue.qsize()
+                if overflow is not None:
+                    break
+        self.state.update(capture_active=False, state="finishing")
+        if overflow is not None:
+            await notify("OneAxe Voice 已停止录音", "流式识别积压，正在补齐已录制内容")
+            await queue.put(overflow)
+        if pending:
+            await queue.put(bytes(pending[:len(pending) // 2 * 2]))
+        await queue.put(None)
+
+    async def _consume_stream(self, queue, target, mode):
+        from websockets.asyncio.client import connect
+        if self.prepare_task:
+            await asyncio.shield(self.prepare_task)
+        token = self.settings.token_path.read_text().strip()
+        async with connect(self.settings.api_url.rstrip('/').replace('http://', 'ws://', 1) + "/api/dictation/stream", proxy=None,
+                           additional_headers={"Authorization": "Bearer " + token},
+                           max_size=2 * 1024 * 1024, max_queue=2,
+                           ping_interval=20, ping_timeout=250, open_timeout=10, close_timeout=2) as ws:
+            await ws.send(json.dumps({"mode": mode}))
+            ready = json.loads(await asyncio.wait_for(ws.recv(), 250))
+            if ready["type"] != "ready":
+                raise CaptureError(ready.get("detail", "流式引擎未就绪"))
+            self.state["warming"] = False
+            last_sent = 0.0
+            pending_result = None
+            raw_committed = ""
+            while True:
+                data = await queue.get()
+                self.state.update(queued_segments=queue.qsize(), recognizing=True)
+                await ws.send("finish" if data is None else data)
+                result = json.loads(await asyncio.wait_for(ws.recv(), 250))
+                if result["type"] == "error":
+                    raise CaptureError(result["detail"])
+                self.state.update(recognizing=False, device=result["device"], request_id=result["request_id"],
+                                  window_seconds=result.get("window_seconds"), inference_ms=result.get("inference_ms"))
+                self.preview = result.get("preview", "")
+                if plain_text(result["text"]) != self.full_text:
+                    pending_result = result
+                if pending_result is not None and (data is None or time.monotonic() - last_sent >= .25):
+                    self.state["segments_done"] += 1
+                    raw_delta = pending_result["text"][len(raw_committed):]
+                    raw_committed = pending_result["text"]
+                    await self._publish(plain_text(pending_result["text"]), raw_delta,
+                                        "stop" if data is None else "stream", result["audio_seconds"],
+                                        result["request_id"], target)
+                    pending_result = None
+                    last_sent = time.monotonic()
+                if data is None:
+                    break
 
     async def dictate(self) -> None:
         """Supervise capture and ordered ASR; errors/cancel stop and reap every task."""
         children = []
         try:
             config = preferences(self.settings)
+            config["mode"] = self.state["mode"]  # Freeze the selected engine for this session.
+            await self._wait_menu()
             await asyncio.sleep(0.15)  # Let GNOME release its shortcut keyboard grab.
             target = await asyncio.to_thread(current_target)
+            self.state.update(target_window=target.window, target_focus=target.focus)
             source = select_source(await asyncio.to_thread(sources), config["source"])
             self.state.update(state="recording", source=source["description"])
             token = self.settings.token_path.read_text().strip()
             async with httpx.AsyncClient(
-                base_url="http://127.0.0.1:8097", trust_env=False, timeout=180,
+                base_url=self.settings.api_url, trust_env=False, timeout=180,
                 headers={"Authorization": "Bearer " + token},
             ) as client:
-                warmup = asyncio.create_task(self._warmup(client))
-                queue = asyncio.Queue(maxsize=config["queue_size"])
-                producer = asyncio.create_task(self._produce(source["name"], config, queue))
-                consumer = asyncio.create_task(self._consume(client, warmup, queue, target, config))
-                children = [producer, consumer, warmup]
+                if config["mode"] == "vad":
+                    warmup = asyncio.create_task(self._warmup(client))
+                    queue = asyncio.Queue(maxsize=config["queue_size"])
+                    producer = asyncio.create_task(self._produce(source["name"], config, queue))
+                    consumer = asyncio.create_task(self._consume(client, warmup, queue, target, config))
+                    children = [producer, consumer, warmup]
+                else:
+                    queue = asyncio.Queue(maxsize=400)  # At most 64 s / 2.05 MB PCM, including cold start.
+                    producer = asyncio.create_task(self._produce_stream(source["name"], config, queue))
+                    consumer = asyncio.create_task(self._consume_stream(queue, target, config["mode"]))
+                    children = [producer, consumer]
                 try:
-                    await notify("OneAxe Voice 持续听写中", f"停顿后自动出字 · {config['shortcut']} 结束并补齐最后一段")
+                    await notify("OneAxe Voice 持续听写中", f"{MODES[config['mode']]} · {config['shortcut']} 结束并补齐尾部")
                     await asyncio.gather(producer, consumer)
                 finally:
                     for child in children:
@@ -269,7 +440,8 @@ class Desktop:
             await notify("OneAxe Voice 未完成", message)
         finally:
             self.stop.set()
-            self.state.update(capture_active=False, recognizing=False, warming=False, voice_active=False)
+            self.state.update(capture_active=False, recognizing=False, warming=False, voice_active=False,
+                              queued_segments=0)
             self.task = None
 
 
@@ -299,7 +471,7 @@ async def serve(settings: Settings) -> None:
             if struct.unpack("3i", credentials)[1] != os.getuid():
                 raise ValueError("仅允许当前用户")
             request = json.loads(await asyncio.wait_for(reader.readline(), 3))
-            result = await desktop.dispatch(request["action"])
+            result = await desktop.dispatch(request.pop("action"), **request)
             writer.write((json.dumps(result, ensure_ascii=False) + "\n").encode())
             await writer.drain()
         except Exception:
@@ -317,20 +489,29 @@ async def serve(settings: Settings) -> None:
         async with server:
             await shutdown.wait()
             await desktop.dispatch("cancel")
+            if desktop.prepare_task:
+                desktop.prepare_task.cancel()
+                await asyncio.gather(desktop.prepare_task, return_exceptions=True)
     finally:
         path.unlink(missing_ok=True)
         lock.close()
 
 
-def control(settings: Settings, action: str) -> dict:
+def control(settings: Settings, action: str, **options) -> dict:
     """Send a short command; the shortcut can start its installed user service on demand."""
     path = settings.runtime_dir / "desktop.sock"
+    if action == "toggle":
+        unit = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "systemd/user/oneaxe-voice-tray.service"
+        if unit.exists():
+            with suppress(OSError, subprocess.SubprocessError):
+                subprocess.run(["systemctl", "--user", "start", "oneaxe-voice-tray.service"],
+                               capture_output=True, timeout=5)
     for attempt in range(21):
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
                 client.settimeout(10)
                 client.connect(str(path))
-                client.sendall((json.dumps({"action": action}) + "\n").encode())
+                client.sendall((json.dumps({"action": action, **options}) + "\n").encode())
                 with client.makefile("rb") as stream:
                     result = json.loads(stream.readline(65536))
                 if "error" in result:

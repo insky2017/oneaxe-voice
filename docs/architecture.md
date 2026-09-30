@@ -1,12 +1,16 @@
 # 架构与隔离边界
 
-第一阶段提供 GPU 短录音 API；第二阶段增加 DJI Mic、F8 和 X11 粘贴；第三阶段在独立桌面控制器中增加 CPU WebRTC VAD、持续采集及串行分段队列。算法及边界见 [VAD 说明](vad.md)。
+第一阶段提供 GPU 短录音 API；第二阶段增加 DJI Mic、F8 和 X11 粘贴；第三阶段在独立桌面控制器中增加 CPU WebRTC VAD、持续采集及串行分段队列。第四阶段加入两种官方流式引擎、独立工作进程及顶栏控制。算法及边界见 [VAD 说明](vad.md) 和 [三模式说明](modes.md)。
 
 ```mermaid
 flowchart LR
-    M[DJI Mic / F8] --> K[桌面控制器 / CPU VAD]
+    T[顶栏模式菜单 / 实时字幕] <--> K
+    M[DJI Mic / F8] --> K[桌面控制器 / 按模式采集]
     K --> Q[有界片段队列]
     Q --> C
+    K --> S[PCM WebSocket / 整轮互斥]
+    S --> R[独立 vLLM 工作进程 / Qwen 或 R2T2]
+    R --> K
     A[WAV 文件] --> B[OneAxe Voice CLI]
     B --> C[独立 API：127.0.0.1:8097]
     C --> D[校验及转换为 16 kHz 单声道]
@@ -24,7 +28,7 @@ flowchart LR
 | 项目 | OneAxe Voice | VPlus |
 | --- | --- | --- |
 | 代码 | `~/tools/oneaxe-voice` | `~/tools/oneaxe.cn/apps/vplusASRMasterLu` |
-| Python 环境 | 本项目 `.venv` | `~/tools/miniconda3/envs/qwen3-asr` |
+| Python 环境 | 本项目 `.venv` / `.venv-stream` | `~/tools/miniconda3/envs/qwen3-asr` |
 | 用户级服务 | `oneaxe-voice.service` | `oneaxe-vplus.service` |
 | HTTP 端口 | `127.0.0.1:8097` | `8092` |
 | 模型实例 | 首次请求加载，独立生命周期 | 由既有服务管理 |
@@ -37,6 +41,8 @@ flowchart LR
 独立实例仍共享同一张 RTX 4090 的算力、显存和显存带宽。代码与进程隔离不能保证 VPlus 在同时重负载时完全不受性能影响。当前未做并行课程转写负载测试，也没有跨服务的 GPU 优先级调度。将来若需要统一调度，可另行设计公共推理服务及 VPlus 迁移；本阶段没有进行该迁移。
 
 ## GPU 与并发
+
+以下 PyTorch 分配限制适用于稳听。流式模式固定 512 MiB KV 缓存，权重和编码器另占显存；启动要求至少 7 GiB 空闲，不设总显存硬上限。详见 [生命周期](modes.md#生命周期与数据)。引擎路由同一时间只保留一个 OneAxe 模型；切换前释放旧实例，流式整轮持锁，取消会回收工作进程及 CUDA 子进程。
 
 - 固定 CUDA 推理，加载后检查全部参数位于指定设备。CUDA 不可用时返回 `503`，不切换 CPU。
 - FP16、单次推理、batch size 1。第二个并发 API 请求立即收到 `429`；桌面控制器自己的有界队列串行消费片段。预热也使用同一互斥锁和模型实例。

@@ -38,6 +38,8 @@ ffmpeg -nostdin -i /absolute/path/input.m4a -t 60 -ac 1 -ar 16000 -c:a pcm_s16le
 | `GET /health` | 无 | HTTP 存活检查；不加载或验证模型 |
 | `GET /api/dictation/status` | Bearer | 模型加载、忙碌、设备和资源配置 |
 | `POST /api/dictation/warmup` | Bearer | 提前加载现有 CUDA 模型；无音频请求体 |
+| `POST /api/dictation/prepare` | Bearer | JSON `mode` 选择并预热 `vad` / `qwen-stream` / `r2t2` |
+| `WS /api/dictation/stream` | Bearer | 持续 PCM 输入与累计稳定文本、候选字幕 |
 | `POST /api/dictation/transcribe` | Bearer | multipart 的 `file` 字段上传 WAV |
 
 令牌由 `./bin/oneaxe-voice init` 创建，重复执行不会覆盖现有令牌。客户端从 `runtime/client.token` 读取，不需要复制到命令行。
@@ -106,6 +108,18 @@ PID 和耗时随运行变化。`total` 为服务端开始处理至推理完成�
 | `503` | CUDA、本地模型目录或显存预算不可用；检查 status 和日志 |
 | `500` | 其他识别故障；检查服务日志 |
 
+## 流式协议
+
+仅接受 loopback 客户端且必须携带 Authorization header；拒绝带 Origin 的浏览器连接。音频无需经过代理。
+
+1. 连接 `/api/dictation/stream`，发送 `{"mode":"qwen-stream"}` 或 `{"mode":"r2t2"}`。
+2. 等待 `type: "ready"`。首次模型加载可能需要约 40 秒。
+3. 发送 16 kHz 单声道 PCM16 小端二进制块，每块 1–32000 个采样。客户端通常每 160 ms 送入，等待该块响应再送下一块。
+4. `partial` 返回整轮累计冻结 `text`、可修订 `preview`、递增 `sequence`、`device`、`audio_seconds`、`window_seconds` 和 `inference_ms`。只按冻结文字差量输入。
+5. 发送文本 `finish` 获取 `final`，补齐尾部；发送 `cancel` 或断开取消会话。超过 30 秒没有输入会关闭会话，已开始的 GPU 操作完成后回收实例。
+
+流式整轮占用引擎，其间预热、切换、WAV 识别返回忙碌，不抢占录音。音频总量最多 60 分钟。最终文字前缀冲突时报错并保留已提交结果；不会回删目标应用内容。WS `error.detail` 为故障说明。
+
 ## 服务操作
 
 ```bash
@@ -140,6 +154,9 @@ cd ~/tools/oneaxe-voice
 | --- | --- | --- |
 | `ONEAXE_VOICE_MODEL_DIR` | `~/tools/models/Qwen3-ASR-1.7B` | 既有模型目录；支持 `~` 展开 |
 | `ONEAXE_VOICE_RUNTIME_DIR` | 项目下 `runtime` | 令牌和临时录音目录 |
+| `ONEAXE_VOICE_API_URL` | `http://127.0.0.1:8097` | 桌面控制器的 loopback API 地址，独立测试可换端口 |
+| `ONEAXE_VOICE_R2T2_MODEL_DIR` | `~/tools/models/Confucius4-R2T2` | R2T2 权重目录 |
+| `ONEAXE_VOICE_STREAM_PYTHON` | 项目下 `.venv-stream/bin/python` | 独立流式解释器 |
 | `ONEAXE_VOICE_CUDA_DEVICE` | `0` | CUDA 设备索引 |
 | `ONEAXE_VOICE_MEMORY_FRACTION` | `0.25` | PyTorch 分配器显存比例上限 |
 | `ONEAXE_VOICE_IDLE_SECONDS` | `120` | 空闲卸载阈值，`0` 表示禁用 |

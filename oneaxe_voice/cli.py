@@ -55,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("cancel", help="取消本次桌面听写")
     commands.add_parser("desktop-status", help="查看录音、识别和粘贴状态")
     commands.add_parser("desktop-run", help="运行桌面录音控制服务")
+    mode = commands.add_parser("set-mode", help="选择稳听 / 随听 / 即听；录音中下轮生效")
+    mode.add_argument("mode", choices=["vad", "qwen-stream", "r2t2"])
     setup = commands.add_parser("desktop-setup", help="安装 GNOME 桌面服务与全局快捷键")
     setup.add_argument("--shortcut", default="F8")
     setup.add_argument("--remove", action="store_true", help="移除本项目的快捷键并停止桌面服务")
@@ -84,6 +86,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "desktop-run":
             from .desktop import serve
             asyncio.run(serve(settings))
+            return 0
+        if args.command == "set-mode":
+            from .desktop import control
+            print(json.dumps(control(settings, "configure", mode=args.mode), ensure_ascii=False, indent=2))
             return 0
         if args.command in {"toggle", "cancel", "desktop-status"}:
             from .desktop import control

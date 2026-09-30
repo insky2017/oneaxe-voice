@@ -8,7 +8,8 @@ import logging
 import os
 import uuid
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import JSONResponse
 
@@ -16,6 +17,8 @@ from . import __version__
 from .audio import AudioError
 from .backend import BusyError, GPUError, QwenEngine
 from .config import Settings
+from .engines import EngineRouter
+from .modes import validate_mode
 
 LOGGER = logging.getLogger("uvicorn.error")
 
@@ -78,7 +81,7 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
         raise ValueError("请先运行 oneaxe-voice init 生成本机令牌")
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-    engine = engine or QwenEngine(settings)
+    engine = engine or EngineRouter(settings)
     pending: set[asyncio.Task] = set()
 
     async def idle_loop() -> None:
@@ -123,6 +126,95 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
         pending.discard(task)
         if not task.cancelled():
             task.exception()
+
+    async def worker_call(method, *args):
+        task = asyncio.create_task(asyncio.to_thread(method, *args))
+        pending.add(task)
+        task.add_done_callback(completed)
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # Keep the engine lease until an already dispatched CUDA step ends.
+            await asyncio.gather(task, return_exceptions=True)
+            raise
+
+    class ModeRequest(BaseModel):
+        mode: str
+
+    @app.post("/api/dictation/prepare")
+    async def prepare(value: ModeRequest):
+        try:
+            validate_mode(value.mode)
+            return await worker_call(engine.prepare, value.mode)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except BusyError as exc:
+            raise HTTPException(429, str(exc)) from exc
+        except GPUError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
+    @app.websocket("/api/dictation/stream")
+    async def streaming(ws: WebSocket):
+        # WebSocket upgrades do not pass through HTTP authentication middleware.
+        try:
+            local = ws.client is not None and ipaddress.ip_address(ws.client.host).is_loopback
+        except ValueError:
+            local = False
+        valid = hmac.compare_digest(ws.headers.get("authorization", ""), "Bearer " + token)
+        if not local or not valid or "origin" in ws.headers:
+            await ws.close(code=1008)
+            return
+        await ws.accept()
+        session = str(uuid.uuid4())
+        finished = False
+        try:
+            hello = await asyncio.wait_for(ws.receive_json(), 5)
+            mode = validate_mode(hello.get("mode"))
+            if mode == "vad":
+                raise ValueError("稳听使用 WAV 接口")
+            await worker_call(engine.begin, mode, session)
+            await ws.send_json({"type": "ready", "request_id": session, "mode": mode})
+            total = 0
+            sequence = 0
+            while True:
+                message = await asyncio.wait_for(ws.receive(), 30)
+                if message["type"] == "websocket.disconnect":
+                    break
+                data = message.get("bytes")
+                if data is not None:
+                    if not data or len(data) > 64000 or len(data) % 2:
+                        raise ValueError("音频块须为不超过 2 秒的单声道 PCM16")
+                    total += len(data)
+                    if total > 3600 * 32000:
+                        raise ValueError("录音超过 60 分钟上限")
+                    result = await worker_call(engine.feed, session, data)
+                elif message.get("text") == "finish":
+                    result = await worker_call(engine.finish, session)
+                    finished = True
+                elif message.get("text") == "cancel":
+                    break
+                else:
+                    raise ValueError("未知流式消息")
+                sequence += 1
+                await ws.send_json({**result, "type": "final" if finished else "partial",
+                                    "request_id": session, "sequence": sequence,
+                                    "audio_seconds": total / 32000,
+                                    "device": f"cuda:{settings.cuda_device}"})
+                if finished:
+                    break
+        except (WebSocketDisconnect, asyncio.TimeoutError):
+            pass
+        except (BusyError, GPUError, ValueError) as exc:
+            with suppress(Exception):
+                await ws.send_json({"type": "error", "detail": str(exc)})
+        except Exception as exc:
+            LOGGER.error("stream_failed kind=%s request_id=%s", type(exc).__name__, session)
+            with suppress(Exception):
+                await ws.send_json({"type": "error", "detail": "流式识别失败，请检查本机服务"})
+        finally:
+            await asyncio.to_thread(engine.end, session, not finished)
+            with suppress(Exception):
+                await ws.close()
 
     @app.post("/api/dictation/warmup")
     async def warmup():

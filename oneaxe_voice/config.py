@@ -20,6 +20,7 @@ class Settings:
     idle_seconds: float = 120.0
     cuda_device: int = 0
     max_new_tokens: int = 512
+    api_url: str = "http://127.0.0.1:8097"
 
     @property
     def token_path(self) -> Path:
@@ -40,9 +41,16 @@ class Settings:
             memory_fraction=float(os.getenv("ONEAXE_VOICE_MEMORY_FRACTION", "0.25")),
             idle_seconds=float(os.getenv("ONEAXE_VOICE_IDLE_SECONDS", "120")),
             cuda_device=int(os.getenv("ONEAXE_VOICE_CUDA_DEVICE", "0")),
+            api_url=os.getenv("ONEAXE_VOICE_API_URL", "http://127.0.0.1:8097"),
         )
         if not 0 < value.memory_fraction <= 1:
             raise ValueError("ONEAXE_VOICE_MEMORY_FRACTION must be in (0, 1]")
         if value.idle_seconds < 0 or value.cuda_device < 0:
             raise ValueError("Idle seconds and CUDA device must be nonnegative")
+        from urllib.parse import urlsplit
+        address = urlsplit(value.api_url)
+        if (address.scheme != "http" or address.hostname not in {"127.0.0.1", "localhost", "::1"}
+                or address.username or address.password or address.query or address.fragment
+                or address.path not in {"", "/"}):
+            raise ValueError("ONEAXE_VOICE_API_URL 必须是本机 HTTP 地址")
         return value

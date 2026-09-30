@@ -45,12 +45,18 @@ def verify_shortcut(shortcut: str) -> None:
 
 
 def install_desktop(settings: Settings, shortcut: str) -> None:
-    """Set up local units without enabling login startup or touching VPlus."""
+    """Install local units and enable the indicator with the graphical session."""
     if os.environ.get("XDG_SESSION_TYPE") != "x11":
         raise ValueError("目前仅支持 GNOME X11 桌面")
     for tool in ("parec", "pactl", "xdotool", "xprop", "xclip", "notify-send", "gsettings"):
         if shutil.which(tool) is None:
             raise ValueError(f"缺少桌面依赖：{tool}")
+    try:
+        run("/usr/bin/python3", "-c", "import gi, cairo; gi.require_version('Gtk', '3.0'); "
+            "gi.require_version('AyatanaAppIndicator3', '0.1'); gi.require_version('Dbusmenu', '0.4'); "
+            "from gi.repository import Gtk, AyatanaAppIndicator3, Dbusmenu")
+    except subprocess.CalledProcessError as exc:
+        raise ValueError("缺少 GTK / Ayatana AppIndicator 桌面依赖，请参阅 docs/modes.md") from exc
     verify_shortcut(shortcut)
     api_unit = install_api()
     project_dir = ROOT.resolve()
@@ -75,6 +81,19 @@ def install_desktop(settings: Settings, shortcut: str) -> None:
         temporary.replace(unit)
     finally:
         temporary.unlink(missing_ok=True)
+    tray_template = (project_dir / "systemd/oneaxe-voice-tray.service").read_text()
+    tray_rendered = render_unit(tray_template, {
+        "PROJECT_DIR": systemd_path(project_dir),
+        "TRAY_COMMAND": systemd_quote(project_dir / "bin/tray"),
+        "DESKTOP_ENVIRONMENT": env_lines,
+    })
+    with tempfile.NamedTemporaryFile("w", dir=unit.parent, delete=False) as output:
+        output.write(tray_rendered)
+        tray_temporary = Path(output.name)
+    try:
+        tray_temporary.replace(unit.with_name("oneaxe-voice-tray.service"))
+    finally:
+        tray_temporary.unlink(missing_ok=True)
     value = preferences(settings)
     value["shortcut"] = shortcut
     path = settings.runtime_dir / "desktop.json"
@@ -89,12 +108,14 @@ def install_desktop(settings: Settings, shortcut: str) -> None:
         run("gsettings", "set", MEDIA_SCHEMA, "custom-keybindings", repr(existing + [CUSTOM_PATH]))
     run("systemctl", "--user", "daemon-reload")
     run("systemctl", "--user", "restart", "oneaxe-voice-desktop.service")
-    print(f"已安装桌面听写：{shortcut} 开始/结束录音；服务未设置登录自启。")
+    run("systemctl", "--user", "enable", "--now", "oneaxe-voice-tray.service")
+    print(f"已安装桌面听写：{shortcut} 开始/结束；顶栏图标随图形会话启动，GPU 模型按需加载。")
 
 
 def remove_shortcut() -> None:
     """Remove only this project's binding and stop its recording controller."""
     run("gsettings", "set", MEDIA_SCHEMA, "custom-keybindings",
         repr([path for path in bindings() if path != CUSTOM_PATH]))
+    run("systemctl", "--user", "disable", "--now", "oneaxe-voice-tray.service")
     run("systemctl", "--user", "stop", "oneaxe-voice-desktop.service")
     print("已移除 OneAxe Voice 快捷键并停止桌面录音服务。")
