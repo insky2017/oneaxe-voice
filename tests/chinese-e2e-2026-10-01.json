@@ -1,0 +1,12 @@
+{
+  "source": "Existing documented OneAxe Voice smoke-zh-10s.wav test fixture; original audio not committed",
+  "audio_seconds": 10,
+  "segments": 1,
+  "reason": "stop",
+  "http_status": 200,
+  "request_id": "4a1ef1b9-9d93-4aa3-a38e-b4ffcf53faec",
+  "phone_target_text": [
+    "大家好，今天是二零二六年九月二十六日，丙午年。"
+  ],
+  "scope": "Phone fixture to segmentation to real ASR to original input field; does not use microphone"
+}

@@ -1,0 +1,78 @@
+{
+  "date": "2026-10-01",
+  "scope": "Host ASR baseline and analysis of the original Android gate; not phone microphone validation",
+  "generation": "python3 tests/generate_fixtures.py /tmp/oneaxe-voice-fixtures",
+  "manifest": {
+    "sentences": [
+      "This is a phone voice test.",
+      "I want to connect to the remote server.",
+      "The network is ready."
+    ],
+    "sample_rate": 16000,
+    "files": {
+      "normal.wav": {
+        "seconds": 8.41,
+        "rms": 4412.31,
+        "peak": 22335
+      },
+      "quiet.wav": {
+        "seconds": 8.41,
+        "rms": 220.36,
+        "peak": 1116
+      },
+      "silence.wav": {
+        "seconds": 3,
+        "rms": 0,
+        "peak": 0
+      }
+    }
+  },
+  "host_results": [
+    {
+      "request_id": "ff33bc26-9f1c-4232-a7cd-b46b83e0d149",
+      "text": "This is a phone voice test. I want to connect to the remote server. The network is ready.",
+      "audio_seconds": 8.41,
+      "inference_performed": true,
+      "timing_ms": {
+        "normalize": 99.99,
+        "model_load": 0.11,
+        "inference": 743.79,
+        "total": 843.89
+      },
+      "device": "cuda:0",
+      "fixture": "normal"
+    },
+    {
+      "request_id": "978a0a57-54e5-4f27-8057-d0dc1c1136f7",
+      "text": "This is a phone voice test. I want to connect to the remote server. The network is ready.",
+      "audio_seconds": 8.41,
+      "inference_performed": true,
+      "timing_ms": {
+        "normalize": 114.71,
+        "model_load": 0.1,
+        "inference": 760.76,
+        "total": 875.56
+      },
+      "device": "cuda:0",
+      "fixture": "quiet"
+    }
+  ],
+  "original_gate_analysis": {
+    "normal": {
+      "frames": 421,
+      "max_frame_rms": 12715.32,
+      "frames_above_old_650_gate": 195
+    },
+    "quiet": {
+      "frames": 421,
+      "max_frame_rms": 635.34,
+      "frames_above_old_650_gate": 0
+    },
+    "silence": {
+      "frames": 150,
+      "max_frame_rms": 0.0,
+      "frames_above_old_650_gate": 0
+    }
+  },
+  "limitation": "No audio was retained from the first user trial. The quiet-audio defect is reproducible, but it alone does not prove the cause of that trial."
+}
