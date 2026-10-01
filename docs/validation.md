@@ -390,3 +390,13 @@ PC 停止后，手机单独活动时执行一次明确卸载，手机收到 `MOD
 最终证据为本机忽略文件 `work/concurrent-desktop-e2e-fixed.log`、`work/concurrent-desktop-e2e.json`、`work/concurrent-desktop-controls-e2e.json`；首轮失败日志保留。未向用户实际输入窗口注入测试文字，也未重测 tmux。
 
 Android 真机跨网络录音和目标输入框填入由 Pocket 接入后单独验收，不把本机双身份客户端算作手机 App 已接入。
+
+### 正式部署与交接
+
+用户结束 F8 录音后，再次确认桌面 idle，将功能提交 `405cbc4` 快进合入 canonical `master`，只重启 OneAxe Voice 的 API、桌面和托盘。三个服务均 active/running，启动命令与实际 cwd 均来自正式工程。桌面自动预热 R2T2，实际状态 `ready / cuda:0`、`max_sessions=2`、`auto_unload=false`、`idle_seconds=0`；没有向用户输入窗口注入验证文字。
+
+正式入口 `https://rtx4090.nase-stairs.ts.net:8097` 通过系统 CA 与 DNS 主机名校验。未认证能力查询返回 401，独立 Pocket 设备凭据查询返回 200，移动入口访问模型管理及 `/health` 返回 403。Pocket 凭据仅写入私有 `runtime/pocket.token`（0600），未打印或纳入 Git。通过正式 WSS 发送 12 秒受控英语样本，首次固定文字 0.729 秒，累计 192000 样本全部处理，final 完整、关键词检查通过；结束后同一模型代次保持、移动名额释放。该短检查证明部署后的真实入口可转写，不替代隔离环境中的 10 分钟双路验收。
+
+生产 `desktop.json` 与回滚备份逐字节一致。原来没有 `model-policy.json`，部署后也未创建，保持既有默认常驻策略；不把文件不存在写成哈希一致。VPlus 仍为 PID `7301`、启动时间 `2026-09-30 23:20:01 CST`，`8092/health` 返回 200。隔离 API、worker 及 GPU 子进程已回收；没有修改或重启 VPlus、修改共享权重。独立只读审查确认服务来源、配置及 Git 私有文件边界。
+
+部署证据为本机忽略文件 `work/concurrency-deploy-result.json`、`work/concurrency-live-https.json`；回滚基线在 `work/concurrency-rollback/`。证书采用固定本地镜像的受限 Docker 签发，启用 12 小时自动续期和每分钟证书重读。简短能力入口 `~/docs/oneaxe-voice/README.md` 已更新，Pocket 按 [交接说明](pocket-handoff-2026-10-02.md) 和 [移动 V1](mobile-api-v1.md) 实现；Android 真机、跨网络与输入框验收仍由客户端阶段完成。

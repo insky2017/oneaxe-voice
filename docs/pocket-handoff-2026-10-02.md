@@ -2,6 +2,8 @@
 
 接口已由 Voice 定稿，请直接按 [移动接口 V1](mobile-api-v1.md) 实现，不再协商已确定的字段。部署操作见 [移动入口部署](mobile-deployment.md)，各项实测与限制见 [验证记录](validation.md)。
 
+**2026-10-02 已部署并验证正式入口**：R2T2 已预热为 `ready / cuda:0`，最多两路。已通过 10 分钟 PC + 移动双流、独立 X11 桌面回归，以及正式 8097 端口的 TLS/认证/真实 WSS 转写检查。Pocket 专用凭据已签发到服务端私有 `runtime/pocket.token`（0600）；这是本机凭据文件位置，不是下载接口，不把文件内容写入对话或代码。App 侧仍待按本文接入并完成真机验收。
+
 - 正式目标：`https://rtx4090.nase-stairs.ts.net:8097` / 同主机 `wss://`，保持系统证书和 DNS 身份校验。先查能力接口，不使用远端 `/health`；管理路径和旧转写路径在移动入口返回 403。
 - 查询：`GET /api/mobile/v1/capabilities`；连接：`WS /api/mobile/v1/dictation/stream`。两者都用独立设备 Bearer，放 `Authorization` header。PC 本机令牌不能下发手机。
 - 首版仅 `r2t2`，容量 1 PC + 1 手机。先查询，再用实例和模型代次 `start`，收到 `ready` 才录音。手机不传 mode，不替用户加载或切换模型。
