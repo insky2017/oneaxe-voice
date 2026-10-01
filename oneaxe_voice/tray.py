@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import socket
 import subprocess
@@ -15,12 +16,18 @@ import subprocess
 import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
+gi.require_version("Pango", "1.0")
 gi.require_version("AyatanaAppIndicator3", "0.1")
 gi.require_version("Dbusmenu", "0.4")
-from gi.repository import Gtk, Gdk, GLib, AyatanaAppIndicator3 as AppIndicator
+from gi.repository import Gtk, Gdk, GLib, Pango, AyatanaAppIndicator3 as AppIndicator
 
 from .config import ROOT, Settings
 from .modes import MODES
+from .preview_layout import anchor_from_position, monitor_for_window, overlay_position
+
+
+POSITIONS = {"top": "顶部居中", "bottom": "底部居中", "left": "左侧居中",
+             "right": "右侧居中", "custom": "自定义位置"}
 
 
 def request(settings, action, **options):
@@ -45,6 +52,14 @@ class Tray:
         self.state = {}
         self.last_icon = None
         self.closing = False
+        self.adjusting = False
+        self.drag_origin = None
+        self.target_geometry_id = None
+        self.target_geometry = None
+        self.preview_area = None
+        self.placing = False
+        self.was_active = False
+        self.preview_dimensions = None
         self.indicator = AppIndicator.Indicator.new(
             "oneaxe-voice", "audio-input-microphone", AppIndicator.IndicatorCategory.APPLICATION_STATUS,
         )
@@ -76,6 +91,21 @@ class Tray:
         self.show_preview = Gtk.CheckMenuItem(label="显示实时字幕")
         self.show_preview.connect("toggled", lambda item: self.configure(preview=item.get_active()))
         self.menu.append(self.show_preview)
+        self.position_menu = Gtk.Menu()
+        self.position_items = {}
+        position_root = Gtk.MenuItem(label="字幕位置")
+        position_root.set_submenu(self.position_menu)
+        self.menu.append(position_root)
+        group = None
+        for key, label in POSITIONS.items():
+            item = Gtk.RadioMenuItem.new_with_label_from_widget(group, label)
+            group = group or item
+            item.connect("toggled", self.choose_position, key)
+            self.position_menu.append(item)
+            self.position_items[key] = item
+        self.adjust_position = Gtk.CheckMenuItem(label="调整字幕位置")
+        self.adjust_position.connect("toggled", self.toggle_adjustment)
+        self.menu.append(self.adjust_position)
         self.item("复制本轮全文", lambda *_: self.command("copy"))
         self.item("设置…", self.settings_window)
         self.separator()
@@ -122,6 +152,21 @@ class Tray:
         if item.get_active():
             self.configure(mode=mode)
 
+    def choose_position(self, item, position):
+        if item.get_active() and not self.syncing:
+            self.configure(preview_position=position)
+
+    def toggle_adjustment(self, item):
+        self.adjusting = item.get_active()
+        self.drag_origin = None
+        if self.preview.get_window():
+            self.preview.input_shape_combine_region(
+                None if self.adjusting else __import__("cairo").Region())
+            cursor = (Gdk.Cursor.new_for_display(Gdk.Display.get_default(), Gdk.CursorType.FLEUR)
+                      if self.adjusting else None)
+            self.preview.get_window().set_cursor(cursor)
+        self.update_preview()
+
     def poll(self):
         if not self.polling and not self.closing:
             self.polling = True
@@ -141,6 +186,12 @@ class Tray:
             self.set_icon("error", "服务未连接")
             self.preview.hide()
             return False
+        was_active = self.was_active
+        now_active = state.get("state") not in {"idle", "error", "stopped"}
+        if now_active and not was_active:
+            self.target_geometry_id = None
+            self.target_geometry = None
+        self.was_active = now_active
         self.state.update(state)
         state = self.state
         mode = state.get("mode", "vad")
@@ -172,13 +223,10 @@ class Tray:
         self.radios[selected].set_active(True)
         self.auto.set_active(not state.get("clipboard_only", False))
         self.show_preview.set_active(state.get("preview_enabled", True))
+        self.position_items.get(state.get("preview_position", "top"), self.position_items["top"]).set_active(True)
         self.syncing = False
         self.set_icon(icon, f"{MODES[mode]} · {status}")
-        if state.get("preview_enabled") and active and state.get("preview"):
-            self.preview_label.set_text(state["preview"][-220:])
-            self.preview.show_all()
-        else:
-            self.preview.hide()
+        self.update_preview()
         return False
 
     def set_icon(self, icon, description):
@@ -203,24 +251,182 @@ class Tray:
         window.set_skip_pager_hint(True)
         window.set_keep_above(True)
         window.set_type_hint(Gdk.WindowTypeHint.NOTIFICATION)
-        self.preview_label = Gtk.Label()
-        self.preview_label.set_line_wrap(True)
-        self.preview_label.set_max_width_chars(65)
-        self.preview_label.set_width_chars(55)
-        self.preview_label.set_margin_top(12)
-        self.preview_label.set_margin_bottom(12)
-        self.preview_label.set_margin_start(18)
-        self.preview_label.set_margin_end(18)
-        window.add(self.preview_label)
-        def place(*_):
-            display = Gdk.Display.get_default()
-            monitor = display.get_primary_monitor() or display.get_monitor(0)
-            area = monitor.get_workarea()
-            width, height = window.get_size()
-            window.move(area.x + (area.width - width) // 2, area.y + area.height - height - 55)
-            window.input_shape_combine_region(__import__("cairo").Region())
-        window.connect("size-allocate", place)
+        self.preview_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self.preview_box.set_margin_top(10)
+        self.preview_box.set_margin_bottom(10)
+        self.preview_box.set_margin_start(16)
+        self.preview_box.set_margin_end(16)
+        self.preview_rows = []
+        for _ in range(2):
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+            tag = Gtk.Label()
+            tag.set_xalign(0)
+            body = Gtk.Label()
+            body.set_xalign(0)
+            body.set_single_line_mode(True)
+            body.set_ellipsize(Pango.EllipsizeMode.START)
+            body.set_selectable(False)
+            row.pack_start(tag, False, False, 0)
+            row.pack_start(body, True, True, 0)
+            self.preview_box.pack_start(row, False, False, 0)
+            self.preview_rows.append((row, tag, body))
+        self.preview_box.show()
+        window.add(self.preview_box)
+        window.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK |
+                          Gdk.EventMask.POINTER_MOTION_MASK)
+        window.connect("button-press-event", self.begin_preview_drag)
+        window.connect("motion-notify-event", self.move_preview_drag)
+        window.connect("button-release-event", self.end_preview_drag)
+        window.connect("size-allocate", lambda *_: self.place_preview())
+        window.connect("map-event", lambda *_: GLib.idle_add(self.preview_mapped))
         return window
+
+    def preview_mapped(self):
+        if self.preview.get_window():
+            self.preview.input_shape_combine_region(
+                None if self.adjusting else __import__("cairo").Region())
+            if self.adjusting:
+                self.preview.get_window().set_cursor(
+                    Gdk.Cursor.new_for_display(Gdk.Display.get_default(), Gdk.CursorType.FLEUR))
+        self.place_preview()
+        return False
+
+    def target_window_geometry(self, target):
+        if target == self.target_geometry_id:
+            return self.target_geometry
+        self.target_geometry_id = target
+        self.target_geometry = None
+        if not target or not re.fullmatch(r"[0-9]+", str(target)):
+            return None
+        try:
+            result = subprocess.run(["xdotool", "getwindowgeometry", "--shell", str(target)],
+                                    capture_output=True, text=True, check=True, timeout=.7)
+            values = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+            self.target_geometry = tuple(int(values[key]) for key in ("X", "Y", "WIDTH", "HEIGHT"))
+        except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+            pass
+        return self.target_geometry
+
+    def monitor_area(self):
+        display = Gdk.Display.get_default()
+        if display is None:
+            return (0, 0, 800, 600)
+        primary = display.get_primary_monitor()
+        monitors = [primary] if primary else []
+        monitors += [display.get_monitor(index) for index in range(display.get_n_monitors())
+                     if display.get_monitor(index) is not primary]
+        areas = []
+        for monitor in monitors:
+            area = monitor.get_workarea()
+            areas.append((area.x, area.y, area.width, area.height))
+        if not areas:
+            return (0, 0, 800, 600)
+        target = self.target_window_geometry(self.state.get("target_window"))
+        return monitor_for_window(areas, target)
+
+    def place_preview(self):
+        if self.placing or self.drag_origin or not self.preview.get_visible():
+            return
+        self.placing = True
+        try:
+            area = self.monitor_area()
+            self.preview_area = area
+            position = self.state.get("preview_position", "top")
+            anchor = self.state.get("preview_anchor")
+            self.preview.move(*overlay_position(area, self.preview.get_size(), position, anchor))
+        finally:
+            self.placing = False
+
+    def update_preview(self):
+        state = self.state
+        if self.adjusting:
+            rows = [("调整字幕位置", "")]
+        else:
+            committed = state.get("committed_text", "")
+            fixed = state.get("fixed_text", committed)
+            pending = state.get("pending_text", "")
+            delivery = state.get("delivery_state", "idle")
+            queued = state.get("queued_text")
+            if queued is None and fixed != committed:
+                queued = fixed[len(committed):] if fixed.startswith(committed) else fixed
+            if queued and delivery == "queued":
+                waiting = queued
+                rows = [("等待输入 ·", waiting[-160:])]
+            elif committed:
+                prefix = "已复制" if delivery == "copied" else "已发送"
+                rows = [(prefix + " ·", committed[-160:])]
+            else:
+                rows = []
+            if pending:
+                rows.append(("待确认 ·", pending[-160:]))
+            elif not rows and "pending_text" not in state and state.get("preview"):
+                rows.append(("待确认 ·", state["preview"][-160:]))
+            rows = rows[:2]
+        active = state.get("state") not in {"idle", "error", "stopped"}
+        if not self.adjusting and (not state.get("preview_enabled") or not active or not rows):
+            self.preview.hide()
+            return
+        area = self.monitor_area()
+        max_width = max(180, min(620, int(area[2] * .72)))
+        max_width = min(max_width, max(100, area[2] - 32))
+        context = self.preview_rows[0][1].get_pango_context()
+        width = 0
+        line_height = 0
+        for index, (row, tag, body) in enumerate(self.preview_rows):
+            if index < len(rows):
+                tag_text, body_text = rows[index]
+                tag.set_text(tag_text)
+                body.set_text(body_text)
+                layout = Pango.Layout.new(context)
+                layout.set_text(tag_text + " " + body_text, -1)
+                width = max(width, layout.get_pixel_size()[0])
+                line_height = max(line_height, layout.get_pixel_size()[1])
+                if tag_text.startswith("待确认"):
+                    row.get_style_context().add_class("dim-label")
+                else:
+                    row.get_style_context().remove_class("dim-label")
+                tag.show()
+                body.show()
+                row.show()
+            else:
+                row.hide()
+        box_width = min(max_width, max(120, width + 32))
+        box_height = 20 + len(rows) * max(20, line_height) + max(0, len(rows) - 1) * 2
+        dimensions = (box_width, box_height)
+        if dimensions != self.preview_dimensions:
+            self.preview_dimensions = dimensions
+            self.preview.set_size_request(*dimensions)
+            self.preview.resize(*dimensions)
+        self.preview.show()
+        self.place_preview()
+
+    def begin_preview_drag(self, _window, event):
+        if self.adjusting and event.button == 1:
+            x, y = self.preview.get_position()
+            self.drag_origin = (event.x_root - x, event.y_root - y)
+            return True
+        return False
+
+    def move_preview_drag(self, _window, event):
+        if not self.drag_origin:
+            return False
+        area = self.preview_area or self.monitor_area()
+        width, height = self.preview.get_size()
+        x = area[0] + max(0, min(max(0, area[2] - width), round(event.x_root - self.drag_origin[0]) - area[0]))
+        y = area[1] + max(0, min(max(0, area[3] - height), round(event.y_root - self.drag_origin[1]) - area[1]))
+        self.preview.move(x, y)
+        return True
+
+    def end_preview_drag(self, _window, event):
+        if not self.drag_origin or event.button != 1:
+            return False
+        self.move_preview_drag(_window, event)
+        self.drag_origin = None
+        anchor = anchor_from_position(self.preview_area or self.monitor_area(),
+                                      self.preview.get_size(), self.preview.get_position())
+        self.state.update(preview_position="custom", preview_anchor=anchor)
+        self.configure(preview_position="custom", preview_anchor=anchor)
+        return True
 
     def settings_window(self, *_):
         dialog = Gtk.Dialog(title="OneAxe Voice 设置")
@@ -249,6 +455,17 @@ class Tray:
         pause.set_value(config.get("pause_ms", 700))
         pause.connect("value-changed", lambda item: self.configure(pause_ms=item.get_value()))
         box.add(Gtk.Label(label="稳听停顿阈值（毫秒，仅影响稳听）")); box.add(pause)
+        stream_pause = Gtk.SpinButton.new_with_range(500, 2000, 100)
+        stream_pause.set_value(config.get("stream_pause_ms", 1000))
+        stream_pause.connect("value-changed", lambda item: self.configure(stream_pause_ms=item.get_value()))
+        box.add(Gtk.Label(label="流式停顿收尾（毫秒）")); box.add(stream_pause)
+        position = Gtk.ComboBoxText()
+        for key, label in POSITIONS.items():
+            position.append(key, label)
+        position.set_active_id(config.get("preview_position", "top"))
+        position.connect("changed", lambda item: self.configure(preview_position=item.get_active_id()))
+        box.add(Gtk.Label(label="字幕位置")); box.add(position)
+        box.add(Gtk.Label(label="自定义位置可从托盘菜单进入调整模式后拖动。"))
         dark = Gtk.CheckButton(label="使用深色图标（浅色顶栏）")
         dark.set_active(config.get("icon_theme") == "dark")
         dark.connect("toggled", lambda item: self.configure(icon_theme="dark" if item.get_active() else "light"))

@@ -54,10 +54,13 @@ journalctl --user -u oneaxe-voice-desktop.service -n 50 --no-pager
 | 配置 | 默认值 | 含义 |
 | --- | --- | --- |
 | `mode` | `vad` | `vad` / `qwen-stream` / `r2t2`；录音中选择下轮生效 |
-| `preview` | `true` | 显示不抢焦点的候选字幕 |
+| `preview` | `true` | 显示区分待确认/已发送状态的字幕 |
+| `preview_position` | `top` | `top` / `bottom` / `left` / `right` / `custom`，相对目标窗口所在显示器 |
+| `preview_anchor` | `[0.5, 0.05]` | 自定义位置相对可移动范围的横纵比例，拖动后自动保存 |
 | `icon_theme` | `light` | `light` 适合深色顶栏，`dark` 适合浅色顶栏 |
 | `source` | `null` | 自动选择 DJI；指定字符串时须与 devices 的 name 完全相同 |
 | `pause_ms` | `700` | 连续无人声分段阈值，范围 300–2000 ms |
+| `stream_pause_ms` | `1000` | 随听/即听停顿收尾阈值，范围 500–2000 ms |
 | `segment_seconds` | `15` | 单段最大秒数，范围 3–30 |
 | `max_session_seconds` | `900` | 整轮录音最大秒数，范围 10–3600 |
 | `vad_mode` | `2` | WebRTC VAD 模式，范围 0–3 |
@@ -67,6 +70,8 @@ journalctl --user -u oneaxe-voice-desktop.service -n 50 --no-pager
 | `shortcut` | `F8` | 通知提示使用的名称；实际键绑定应通过 desktop-setup 调整 |
 
 修改录音配置后，下次录音自动读取。VAD 仍可能把音乐、人声节目或噪音误判为说话；说话很轻时先检查麦克风增益，必要时调整判定门限。按键采用点按切换，长按可能产生系统按键重复。详细算法、队列行为和延迟说明见 [VAD 分段与持续输出](vad.md)。
+
+字幕位置即时生效。默认在目标屏幕顶部居中，宽度随文字变化、最多两行，长文本保留最近内容。从顶栏菜单选择“调整字幕位置”后可拖动，松开自动保存，再取消该选项恢复点击穿透。常态字幕不抢焦点；“已发送”指已执行粘贴操作，“已复制”表示只进入剪贴板，“待确认”还不能作为最终文字使用。位置调整基于显示器工作区，不检测任意应用的文本光标。
 
 ## 隔离与数据
 

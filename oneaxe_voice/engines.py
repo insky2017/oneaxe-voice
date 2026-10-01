@@ -176,6 +176,11 @@ class EngineRouter:
             raise ValueError("流式会话已结束")
         return self.worker.call("finish")
 
+    def flush(self, session):
+        if self.active_stream != session:
+            raise ValueError("流式会话已结束")
+        return self.worker.call("flush")
+
     def end(self, session, abort=False):
         if self.active_stream != session:
             return

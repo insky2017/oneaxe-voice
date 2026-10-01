@@ -191,6 +191,13 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
                 elif message.get("text") == "finish":
                     result = await worker_call(engine.finish, session)
                     finished = True
+                elif message.get("text") == "flush":
+                    result = await worker_call(engine.flush, session)
+                elif message.get("text") == "keepalive":
+                    # Idle audio is gated on the desktop after an endpoint.
+                    # Keep the lease alive without invoking ASR on silence.
+                    await ws.send_json({"type": "keepalive"})
+                    continue
                 elif message.get("text") == "cancel":
                     break
                 else:

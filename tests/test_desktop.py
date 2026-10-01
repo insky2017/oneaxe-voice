@@ -211,8 +211,15 @@ class DesktopTests(unittest.IsolatedAsyncioTestCase):
         await self.segments.put(self.segment())
         await asyncio.sleep(.1)
         self.assertFalse(self.outputs)
+        ui = await self.desktop.dispatch('ui')
+        self.assertEqual(ui['delivery_state'], 'queued')
+        self.assertTrue(ui['fixed_text'])
+        self.assertEqual(ui['committed_text'], '')
         await self.desktop.dispatch('menu', opened=False)
         await self.eventually(lambda: len(self.outputs) == 1)
+        await self.eventually(lambda: self.desktop.delivery_state == 'pasted')
+        ui = await self.desktop.dispatch('ui')
+        self.assertEqual(ui['committed_text'], ui['fixed_text'])
         self.assertFalse(self.desktop.only_copy)
         await self.finish()
 
@@ -225,6 +232,27 @@ class DesktopTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.desktop.dispatch('configure', pause_ms=0)
         self.assertFalse((self.settings.runtime_dir / 'desktop.json').exists())
+
+    async def test_new_preview_settings_validate_and_persist_privately(self):
+        await self.desktop.dispatch('configure', preview_position='custom', preview_anchor=[.2, .4], stream_pause_ms=1200)
+        ui = await self.desktop.dispatch('ui')
+        self.assertEqual(ui['preview_anchor'], [.2, .4])
+        self.assertEqual(ui['stream_pause_ms'], 1200)
+        for options in ({'preview_position': 'bad'}, {'preview_anchor': [0, 2]},
+                        {'preview_anchor': [float('nan'), .2]}, {'stream_pause_ms': 1}):
+            with self.assertRaises(ValueError):
+                await self.desktop.dispatch('configure', **options)
+        self.desktop.pending_text = '候选'
+        self.desktop.committed_text = '已发送'
+        self.assertFalse({'pending_text', 'fixed_text', 'committed_text', 'queued_text', 'delivery_state'} & self.desktop.status().keys())
+
+    async def test_long_transcript_keeps_exact_queued_suffix_in_private_ui(self):
+        self.desktop.committed_text = '已发出的长文。' * 200
+        self.desktop.fixed_text = self.desktop.committed_text + '体验。'
+        self.desktop.delivery_state = 'queued'
+        ui = await self.desktop.dispatch('ui')
+        self.assertEqual(len(ui['fixed_text']), len(ui['committed_text']))
+        self.assertEqual(ui['queued_text'], '体验。')
 
     async def test_warmup_does_not_block_capture(self):
         self.allow_warmup.clear()

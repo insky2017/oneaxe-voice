@@ -45,8 +45,18 @@ def verify_controls(settings,window,state_file,feed,errors,menu_owner,evidence_d
         other_file=evidence_dir/'stream-other-target.json'
         other=subprocess.Popen([sys.executable,str(ROOT/'tests/input_target.py'),str(other_file)])
         def other_window():
-            ids=run('xdotool','search','--onlyvisible','--class','OneAxeVoiceTest').splitlines()
-            return next((item for item in ids if item!=window),None)
+            found=subprocess.run(['xdotool','search','--onlyvisible','--class','OneAxeVoiceTest'],
+                                 capture_output=True,text=True,timeout=10)
+            if other.poll() is not None:
+                raise AssertionError(f'second Tk input target exited early ({other.returncode})')
+            if found.returncode==1 and not found.stderr.strip():
+                return None
+            found.check_returncode()
+            ids=found.stdout.splitlines()
+            alternate=next((item for item in ids if item!=window),None)
+            if alternate:
+                assert window in ids,'original input target disappeared before focus test'
+            return alternate
         alternate=wait_for(other_window)
         run('xdotool','windowactivate','--sync',alternate)
         wait_for(lambda:control(settings,'status').get('paste_paused'),15)
@@ -60,8 +70,16 @@ def verify_controls(settings,window,state_file,feed,errors,menu_owner,evidence_d
         abort.set();writer.join(3)
         assert not writer.is_alive() and not errors,errors
         wait_for(lambda:not api()['busy'] and not api()['model_loaded'],15)
-        gpu_pids={int(pid) for pid in run('nvidia-smi','--query-compute-apps=pid','--format=csv,noheader').splitlines()}
-        assert not group.intersection(gpu_pids),'cancel left a CUDA process running'
+        release_started=time.monotonic()
+        deadline=release_started+15
+        while True:
+            gpu_pids={int(pid) for pid in run('nvidia-smi','--query-compute-apps=pid','--format=csv,noheader').splitlines()}
+            remaining=group.intersection(gpu_pids)
+            if not remaining or time.monotonic()>=deadline:
+                break
+            time.sleep(.2)
+        gpu_release_seconds=round(time.monotonic()-release_started,3)
+        assert not remaining,f'cancel left CUDA process IDs {sorted(remaining)} after 15s'
         time.sleep(.5)
         assert text()==preserved,'new text pasted after cancel'
         assert control(settings,'status')['last_action']=='cancelled'
@@ -69,7 +87,8 @@ def verify_controls(settings,window,state_file,feed,errors,menu_owner,evidence_d
         assert json.loads(other_file.read_text())['text']==''
         result={'menu_protocol':'DBusMenu opened/closed/clicked','paste_paused_and_resumed':True,
                 'mode_deferred':True,'caption_kept_focus':True,'changed_window_protected':True,
-                'cancel_stopped_paste':True,'worker_reaped':True,'cuda_children_released':True}
+                'cancel_stopped_paste':True,'worker_reaped':True,'cuda_children_released':True,
+                'worker_group_pids':sorted(group),'gpu_release_seconds':gpu_release_seconds}
         (evidence_dir/'stream-controls-e2e.json').write_text(json.dumps(result,indent=2))
         print(json.dumps(result),flush=True)
     finally:

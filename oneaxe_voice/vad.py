@@ -12,6 +12,77 @@ FRAME_MS = 20
 FRAME_BYTES = RATE * FRAME_MS // 1000 * 2
 
 
+def speech_frame(frame, detector, min_dbfs):
+    values = struct.unpack("<320h", frame)
+    power = sum(value * value for value in values) / 320
+    dbfs = 10 * math.log10(max(power, 1e-12) / 32768**2)
+    return dbfs >= min_dbfs and detector.is_speech(frame, RATE)
+
+
+class StreamEndpoint:
+    """Send speech immediately; mark one endpoint after a quiet interval.
+
+    Only idle silence is gated. During an utterance every frame reaches ASR,
+    including the full pause. A 240 ms preroll retains the next speech onset.
+    Bytes and the 'flush' marker are returned in their exact capture order.
+    """
+
+    def __init__(self, pause_ms=1000, mode=2, min_dbfs=-60, detector=None):
+        self.detector = detector or webrtcvad.Vad(mode)
+        self.min_dbfs = min_dbfs
+        self.pause_frames = math.ceil(pause_ms / FRAME_MS)
+        self.pending = bytearray()
+        self.packet = bytearray()
+        self.pre = deque(maxlen=12)
+        self.active = False
+        self.quiet = 0
+
+    def _drain(self, result, tail=False):
+        while len(self.packet) >= 5120:
+            result.append(bytes(self.packet[:5120]))
+            del self.packet[:5120]
+        if tail and self.packet:
+            result.append(bytes(self.packet))
+            self.packet.clear()
+
+    def feed(self, chunk):
+        self.pending.extend(chunk)
+        result = []
+        while len(self.pending) >= FRAME_BYTES:
+            frame = bytes(self.pending[:FRAME_BYTES])
+            del self.pending[:FRAME_BYTES]
+            speech = speech_frame(frame, self.detector, self.min_dbfs)
+            if not self.active:
+                self.pre.append(frame)
+                if not speech:
+                    continue
+                self.packet.extend(b"".join(self.pre))
+                self.pre.clear()
+                self.active = True
+                self.quiet = 0
+            else:
+                self.packet.extend(frame)
+                self.quiet = 0 if speech else self.quiet + 1
+            self._drain(result)
+            if self.quiet >= self.pause_frames:
+                self._drain(result, tail=True)
+                result.append("flush")
+                self.active = False
+                self.quiet = 0
+        return result
+
+    def finish(self):
+        result = []
+        if self.pending:
+            # Preserve a partial final syllable; pad at most one 20 ms frame.
+            del self.pending[len(self.pending) // 2 * 2:]
+            if self.pending:
+                self.pending.extend(b"\0" * (FRAME_BYTES - len(self.pending)))
+                result.extend(self.feed(b""))
+        self._drain(result, tail=True)
+        return result
+
+
 @dataclass(frozen=True)
 class Segment:
     pcm: bytes
@@ -39,10 +110,7 @@ class Segmenter:
 
     def _speech(self, frame: bytes) -> bool:
         # Reject digital silence / very low electrical noise before the classifier.
-        values = struct.unpack("<320h", frame)
-        power = sum(value * value for value in values) / 320
-        dbfs = 10 * math.log10(max(power, 1e-12) / 32768**2)
-        return dbfs >= self.min_dbfs and self.detector.is_speech(frame, RATE)
+        return speech_frame(frame, self.detector, self.min_dbfs)
 
     def feed(self, chunk: bytes) -> list[Segment]:
         """Accept arbitrary PCM packet sizes without losing frame boundaries."""

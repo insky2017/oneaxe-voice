@@ -199,6 +199,26 @@ class WebSocketTests(unittest.TestCase):
             self.assertEqual((final['sequence'], final['text'], final['type']), (2, '测试文本', 'final'))
         self.assertFalse(self.engine.end.call_args.args[1])
 
+    def test_pause_flush_keeps_lease_and_keepalive_does_not_infer(self):
+        self.engine.flush.return_value = {'text': '测试文本', 'pending': ''}
+        with self.client.websocket_connect('/api/dictation/stream', headers=self.headers) as ws:
+            ws.send_json({'mode': 'r2t2'})
+            ws.receive_json()
+            ws.send_bytes(b'\0' * 5120)
+            ws.receive_json()
+            ws.send_text('flush')
+            result = ws.receive_json()
+            self.assertEqual((result['type'], result['sequence'], result['pending']), ('partial', 2, ''))
+            self.engine.end.assert_not_called()
+            ws.send_text('keepalive')
+            self.assertEqual(ws.receive_json(), {'type': 'keepalive'})
+            self.assertEqual(self.engine.feed.call_count, 1)
+            self.assertEqual(self.engine.flush.call_count, 1)
+            ws.send_bytes(b'\0' * 5120)
+            self.assertEqual(ws.receive_json()['sequence'], 3)
+            ws.send_text('finish')
+            self.assertEqual(ws.receive_json()['type'], 'final')
+
     def test_invalid_pcm_and_disconnect_abort_session(self):
         for pcm in [b'x', b'\0' * 64002, b'']:
             with self.client.websocket_connect('/api/dictation/stream', headers=self.headers) as ws:

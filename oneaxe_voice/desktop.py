@@ -5,6 +5,7 @@ from contextlib import aclosing, suppress
 import fcntl
 import json
 import logging
+import math
 import os
 from pathlib import Path
 import signal
@@ -21,6 +22,7 @@ from .capture import CaptureError, pack_recording, pcm_chunks, segment_recording
 from .config import Settings
 from .paste import append_delta, copy_text, current_target, deliver, plain_text
 from .modes import MODES, validate_mode
+from .vad import StreamEndpoint
 
 LOGGER = logging.getLogger(__name__)
 
@@ -29,13 +31,14 @@ def preferences(settings: Settings) -> dict:
     """Read local preferences; source=None means a uniquely identified DJI device."""
     path = settings.runtime_dir / "desktop.json"
     value = {"source": None, "clipboard_only": False, "shortcut": "F8", "mode": "vad", "preview": True,
-             "icon_theme": "light",
+             "icon_theme": "light", "stream_pause_ms": 1000,
+             "preview_position": "top", "preview_anchor": [0.5, 0.05],
              "pause_ms": 700, "segment_seconds": 15, "max_session_seconds": 900,
              "vad_mode": 2, "vad_min_dbfs": -60, "queue_size": 8}
     if path.exists():
         value.update(json.loads(path.read_text()))
     validate_mode(value["mode"])
-    for key, low, high in (("pause_ms", 300, 2000), ("segment_seconds", 3, 30),
+    for key, low, high in (("pause_ms", 300, 2000), ("stream_pause_ms", 500, 2000), ("segment_seconds", 3, 30),
                            ("max_session_seconds", 10, 3600), ("vad_min_dbfs", -100, 0)):
         value[key] = float(value[key])
         if not low <= value[key] <= high:
@@ -45,7 +48,18 @@ def preferences(settings: Settings) -> dict:
         if not number.is_integer() or not low <= number <= high:
             raise ValueError(f"{key} 须为 {low}–{high} 的整数")
         value[key] = int(number)
+    validate_preview(value)
     return value
+
+
+def validate_preview(value):
+    if value["preview_position"] not in {"top", "bottom", "left", "right", "custom"}:
+        raise ValueError("不支持的字幕位置")
+    anchor = value["preview_anchor"]
+    if (not isinstance(anchor, list) or len(anchor) != 2 or
+            any(isinstance(n, bool) or not isinstance(n, (int, float)) or
+                not math.isfinite(n) or not 0 <= n <= 1 for n in anchor)):
+        raise ValueError("字幕坐标须为两个 0–1 的数字")
 
 
 async def notify(title: str, message: str) -> None:
@@ -73,6 +87,10 @@ class Desktop:
         self.prepare_task = None
         self.menu_until = 0.0
         self.preview = ""
+        self.pending_text = ""
+        self.fixed_text = ""
+        self.committed_text = ""
+        self.delivery_state = "idle"
         self.full_text = ""
         self.records = []
         self.only_copy = False
@@ -91,6 +109,8 @@ class Desktop:
         value["preview_enabled"] = config["preview"]
         value["clipboard_only"] = config["clipboard_only"]
         value["menu_paused"] = time.monotonic() < self.menu_until
+        for key in ("preview_position", "preview_anchor", "stream_pause_ms"):
+            value[key] = config[key]
         return value
 
     async def dispatch(self, action: str, **options) -> dict:
@@ -99,7 +119,11 @@ class Desktop:
         if action == "ui":
             if options.get("menu_open"):
                 self.menu_until = time.monotonic() + 3
-            return {**self.status(), "preview": self.preview[-600:]}
+            return {**self.status(), "preview": self.preview[-600:],
+                    "pending_text": self.pending_text[-600:], "fixed_text": self.fixed_text[-600:],
+                    "committed_text": self.committed_text[-600:],
+                    "queued_text": self.fixed_text[len(self.committed_text):][-600:],
+                    "delivery_state": self.delivery_state}
         if action == "menu":
             self.menu_until = time.monotonic() + (3 if options.get("opened") else .3)
             return self.status()
@@ -114,6 +138,10 @@ class Desktop:
                     pass
                 elif key == "pause_ms" and isinstance(value, (float, int)) and 300 <= value <= 2000:
                     pass
+                elif key == "stream_pause_ms" and isinstance(value, (float, int)) and 500 <= value <= 2000:
+                    pass
+                elif key in {"preview_position", "preview_anchor"}:
+                    validate_preview({**config, key: value})
                 elif key == "max_session_seconds" and isinstance(value, (float, int)) and 10 <= value <= 3600:
                     pass
                 elif key not in {"preview", "clipboard_only"} or not isinstance(value, bool):
@@ -154,6 +182,8 @@ class Desktop:
                       "segments_done": 0, "segments_pasted": 0, "queued_segments": 0,
                       "voice_active": False, "audio_seconds": 0, "mode": config["mode"]}
         self.preview, self.full_text, self.records = "", "", []
+        self.pending_text = self.fixed_text = self.committed_text = ""
+        self.delivery_state = "idle"
         self.session_id = str(uuid.uuid4())
         self.only_copy = config["clipboard_only"]
         self.started = now
@@ -288,6 +318,8 @@ class Desktop:
         if not delta:
             return
         self.full_text = accumulated
+        self.fixed_text = accumulated
+        self.delivery_state = "queued"
         self.records.append({"sequence": self.state["segments_done"], "text": raw,
                              "reason": reason, "audio_seconds": seconds, "request_id": request_id,
                              "mode": self.state["mode"],
@@ -312,35 +344,39 @@ class Desktop:
         if action == "pasted":
             self.state["segments_pasted"] += 1
         self.state["last_action"] = action
+        if action in {"pasted", "copied", "focus_changed"}:
+            self.committed_text = accumulated
+            self.delivery_state = "pasted" if action == "pasted" else "copied"
 
     async def _produce_stream(self, source, config, queue):
         total = 0
-        pending = bytearray()
-        overflow = None
+        endpoint = StreamEndpoint(config["stream_pause_ms"], config["vad_mode"], config["vad_min_dbfs"])
+        overflow = []
         async with aclosing(pcm_chunks(source, self.stop, config["max_session_seconds"])) as stream:
             async for chunk in stream:
-                pending.extend(chunk)
                 total += len(chunk)
                 self.state["audio_seconds"] = round(total / 32000, 2)
-                while len(pending) >= 5120:
-                    data = bytes(pending[:5120])
-                    del pending[:5120]
+                events = endpoint.feed(chunk)
+                self.state["voice_active"] = endpoint.active
+                for index, data in enumerate(events):
                     try:
                         queue.put_nowait(data)
                     except asyncio.QueueFull:
-                        overflow = data
+                        overflow = events[index:]
                         self.stop.set()
                         self.state["stopped_reason"] = "backlog"
                         break
                 self.state["queued_segments"] = queue.qsize()
-                if overflow is not None:
+                if overflow:
                     break
-        self.state.update(capture_active=False, state="finishing")
-        if overflow is not None:
+        self.state.update(capture_active=False, voice_active=False, state="finishing")
+        if not self.stop.is_set():
+            self.state["stopped_reason"] = "session_limit"
+        self.stop.set()
+        if overflow:
             await notify("OneAxe Voice 已停止录音", "流式识别积压，正在补齐已录制内容")
-            await queue.put(overflow)
-        if pending:
-            await queue.put(bytes(pending[:len(pending) // 2 * 2]))
+        for event in overflow + endpoint.finish():
+            await queue.put(event)
         await queue.put(None)
 
     async def _consume_stream(self, queue, target, mode):
@@ -361,7 +397,14 @@ class Desktop:
             pending_result = None
             raw_committed = ""
             while True:
-                data = await queue.get()
+                try:
+                    data = await asyncio.wait_for(queue.get(), 10)
+                except asyncio.TimeoutError:
+                    await ws.send("keepalive")
+                    reply = json.loads(await asyncio.wait_for(ws.recv(), 30))
+                    if reply.get("type") != "keepalive":
+                        raise CaptureError("流式连接保活失败")
+                    continue
                 self.state.update(queued_segments=queue.qsize(), recognizing=True)
                 await ws.send("finish" if data is None else data)
                 result = json.loads(await asyncio.wait_for(ws.recv(), 250))
@@ -370,17 +413,23 @@ class Desktop:
                 self.state.update(recognizing=False, device=result["device"], request_id=result["request_id"],
                                   window_seconds=result.get("window_seconds"), inference_ms=result.get("inference_ms"))
                 self.preview = result.get("preview", "")
+                self.pending_text = result.get("pending", "")
+                self.fixed_text = plain_text(result["text"])
+                if self.fixed_text != self.committed_text:
+                    self.delivery_state = "queued"
                 if plain_text(result["text"]) != self.full_text:
                     pending_result = result
-                if pending_result is not None and (data is None or time.monotonic() - last_sent >= .25):
+                if pending_result is not None and (data is None or data == "flush" or time.monotonic() - last_sent >= .25):
                     self.state["segments_done"] += 1
                     raw_delta = pending_result["text"][len(raw_committed):]
                     raw_committed = pending_result["text"]
                     await self._publish(plain_text(pending_result["text"]), raw_delta,
-                                        "stop" if data is None else "stream", result["audio_seconds"],
+                                        "stop" if data is None else "pause" if data == "flush" else "stream", result["audio_seconds"],
                                         result["request_id"], target)
                     pending_result = None
                     last_sent = time.monotonic()
+                if data == "flush":
+                    self.state["pause_flushes"] = self.state.get("pause_flushes", 0) + 1
                 if data is None:
                     break
 

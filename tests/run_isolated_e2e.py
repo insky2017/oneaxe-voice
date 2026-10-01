@@ -19,6 +19,8 @@ def main():
     parser.add_argument('--display',default=':99')
     parser.add_argument('--mode',default='all',choices=['all','vad','qwen-stream','r2t2'])
     parser.add_argument('--safety',action='store_true')
+    parser.add_argument('--pause-check',action='store_true',
+                        help='Verify a long pause, continued speech, final F8 flush and caption placement')
     args=parser.parse_args()
     if not args.xvfb:parser.error('Install Xvfb or supply --xvfb /path/to/Xvfb')
     if not os.environ.get('ONEAXE_TEST_PRIVATE_DBUS'):
@@ -54,6 +56,7 @@ def main():
         assert all(proc.poll() is None for proc in procs),'test component failed to start'
         command=[sys.executable,'tests/e2e_desktop.py','--audio',str(args.audio.resolve()),'--mode',args.mode]
         if args.safety:command.append('--safety')
+        if args.pause_check:command.append('--pause-check')
         return subprocess.call(command,env=env,cwd=root)
     finally:
         for proc in reversed(procs):

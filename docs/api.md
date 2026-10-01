@@ -115,10 +115,14 @@ PID 和耗时随运行变化。`total` 为服务端开始处理至推理完成�
 1. 连接 `/api/dictation/stream`，发送 `{"mode":"qwen-stream"}` 或 `{"mode":"r2t2"}`。
 2. 等待 `type: "ready"`。首次模型加载可能需要约 40 秒。
 3. 发送 16 kHz 单声道 PCM16 小端二进制块，每块 1–32000 个采样。客户端通常每 160 ms 送入，等待该块响应再送下一块。
-4. `partial` 返回整轮累计冻结 `text`、可修订 `preview`、递增 `sequence`、`device`、`audio_seconds`、`window_seconds` 和 `inference_ms`。只按冻结文字差量输入。
-5. 发送文本 `finish` 获取 `final`，补齐尾部；发送 `cancel` 或断开取消会话。超过 30 秒没有输入会关闭会话，已开始的 GPU 操作完成后回收实例。
+4. `partial` 返回整轮累计冻结 `text`、尚未冻结的后缀 `pending`、最近 600 字的 `preview`（冻结前文与候选后缀组合）、递增 `sequence`、`device`、`audio_seconds`、`window_seconds` 和 `inference_ms`。只按 `text` 差量输入；`pending` 不可直接粘贴。
+5. 停顿时发送文本 `flush`：调用官方结束接口补尾，返回 `partial`，保留整轮文字和模型实例，重建本句流式状态。后续音频作为下一句继续处理。`audio_seconds` 仅统计实际发送的 PCM，桌面的录音时长另包含被过滤的空闲静音。
+6. 空闲静音期间每 10 秒发送文本 `keepalive`，返回 `{"type":"keepalive"}`，不调用模型、不增加 sequence。超过 30 秒没有应用消息会关闭会话。
+7. 发送文本 `finish` 获取 `final` 并结束本轮；紧接 `flush` 且没有新音频时不会重复生成。发送 `cancel` 或断开取消会话，已开始的 GPU 操作完成后回收实例。
 
 流式整轮占用引擎，其间预热、切换、WAV 识别返回忙碌，不抢占录音。音频总量最多 60 分钟。最终文字前缀冲突时报错并保留已提交结果；不会回删目标应用内容。WS `error.detail` 为故障说明。
+
+桌面私有 socket 的 `ui` 操作另提供 `pending_text`（候选）、`fixed_text`（模型已固定）、`committed_text`（已成功执行发送或复制操作）和 `queued_text`（固定但尚未发送的精确差量），各截取末 600 字。`delivery_state` 为 `idle`、`queued`、`pasted` 或 `copied`；菜单暂停期间只更新固定文字，不提前宣称已发送。`pasted` 说明已发出粘贴按键，不能据此保证任意目标应用已接收。公开状态不含上述正文。
 
 ## 服务操作
 

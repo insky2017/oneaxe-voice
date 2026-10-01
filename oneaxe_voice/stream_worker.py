@@ -14,6 +14,8 @@ import sys
 import time
 import traceback
 
+from .paste import append_delta
+
 
 class StreamDecoder:
     def __init__(self, model, mode):
@@ -21,17 +23,23 @@ class StreamDecoder:
         self.reset()
 
     def reset(self):
-        self.state = self.model.init_streaming_state(
-            language="Chinese", chunk_size_sec=.32 if self.mode == "r2t2" else 2,
-            unfixed_chunk_num=0 if self.mode == "r2t2" else 2,
-            unfixed_token_num=1 if self.mode == "r2t2" else 5,
-        )
+        self.state = self._new_state()
         self.committed = ""
         self.base = ""
         self.pending = bytearray()
         self.candidate = ""
+        self.pending_text = ""
         self.max_window = 0
         self.first = True
+        self.has_audio = False
+        self.utterance_boundary = False
+
+    def _new_state(self):
+        return self.model.init_streaming_state(
+            language="Chinese", chunk_size_sec=.32 if self.mode == "r2t2" else 2,
+            unfixed_chunk_num=0 if self.mode == "r2t2" else 2,
+            unfixed_token_num=1 if self.mode == "r2t2" else 5,
+        )
 
     def _fixed_qwen(self):
         # Preserve the exact tokenizer rollback rule of the official next step.
@@ -49,6 +57,9 @@ class StreamDecoder:
             keep -= 1
         return ""
 
+    def _global(self, local):
+        return self.base + (append_delta(self.base, local) if self.utterance_boundary else local)
+
     def _rotate_qwen(self):
         # Qwen has no timestamp-aligned rolling API. Finish complete 30-second
         # acoustic windows through its public API, then start a fresh state.
@@ -58,14 +69,22 @@ class StreamDecoder:
             return False
         self.state.buffer = np.zeros(1280, dtype=np.float32)
         self.model.finish_streaming_transcribe(self.state)
-        final = self.base + self.state.text
+        final = self._global(self.state.text)
         if not final.startswith(self.committed):
             raise ValueError("模型窗口尾部与已提交文字不一致")
         self.base = self.committed = self.candidate = final
-        self.state = self.model.init_streaming_state(
-            language="Chinese", chunk_size_sec=2, unfixed_chunk_num=2, unfixed_token_num=5,
-        )
+        self.pending_text = ""
+        self.state = self._new_state()
+        self.has_audio = False
+        self.utterance_boundary = False
         return True
+
+    def _r2_pending(self, candidate, fixed):
+        # state.text is local to the rolling acoustic window, while
+        # last_fixed_text includes discarded windows. chunk_text is the exact
+        # fixed prefix retained in the current window by the official API.
+        window_fixed = "".join(getattr(self.state, "chunk_text", [fixed]))
+        return candidate[len(window_fixed):] if candidate.startswith(window_fixed) else ""
 
     def feed(self, pcm):
         import numpy as np
@@ -82,16 +101,19 @@ class StreamDecoder:
             if self.mode == "r2t2":
                 candidate, fixed = self.model.streaming_transcribe_no_reset(
                     audio, self.state, max_new_tokens=4 if self.first else 2,
+                    rollback_punctuation=True,
                 )
-                # The official rolling API returns a local candidate and a
-                # session-wide fixed prefix; preview the current acoustic window.
-                self.candidate = candidate
+                local_fixed = fixed
+                fixed = self._global(local_fixed)
+                local_pending = self._r2_pending(candidate, local_fixed)
+                self.pending_text = self._global(local_fixed + local_pending)[len(fixed):]
+                self.candidate = fixed + self.pending_text
                 self.state.chunk_size_sec = .16
                 self.state.chunk_size_samples = 2560
             else:
                 self.model.streaming_transcribe(audio, self.state)
-                self.candidate = self.base + self.state.text
-                fixed = self.base + self._fixed_qwen()
+                self.candidate = self._global(self.state.text)
+                fixed = self._global(self._fixed_qwen())
             if not fixed.startswith(self.committed):
                 if (self.mode == "qwen-stream" and self.committed.startswith(fixed)
                         and self.candidate.startswith(self.committed)):
@@ -102,35 +124,55 @@ class StreamDecoder:
                     raise ValueError("模型修订了已提交前缀，已停止输入以保留原文")
             changed |= fixed != self.committed
             self.committed = fixed
+            if self.mode == "qwen-stream":
+                self.pending_text = (self.candidate[len(fixed):]
+                                     if self.candidate.startswith(fixed) else "")
             self.first = False
+            self.has_audio = True
             self.max_window = max(self.max_window, len(self.state.audio_accum))
             if self.mode == "qwen-stream":
                 changed |= self._rotate_qwen()
         return self.result(changed)
 
-    def finish(self):
+    def _finalize(self, *, restart):
         import numpy as np
         # Both upstream APIs skip final inference when the buffer is exactly
         # empty. Supply 80 ms of trailing context so withheld tokens are flushed.
         tail = np.frombuffer(bytes(self.pending), dtype="<i2").astype(np.float32) / 32768
         self.pending.clear()
-        if (self.first or self.mode == "qwen-stream" and not len(self.state.audio_accum)) and not np.any(tail):
+        if not self.has_audio and not np.any(tail):
             return self.result()
         self.state.buffer = np.concatenate([self.state.buffer, tail, np.zeros(1280, dtype=np.float32)])
         if self.mode == "r2t2":
-            final = self.model.finish_streaming_transcribe_no_reset(self.state, max_new_tokens=64)
+            final = self._global(self.model.finish_streaming_transcribe_no_reset(
+                self.state, max_new_tokens=64,
+            ))
         else:
             self.model.finish_streaming_transcribe(self.state)
-            final = self.base + self.state.text
+            final = self._global(self.state.text)
         if not final.startswith(self.committed):
             raise ValueError("模型尾部与已提交文字不一致，已停止自动输入")
         changed = final != self.committed
         self.committed = final
         self.candidate = final
+        self.pending_text = ""
+        self.has_audio = False
+        if restart:
+            self.base = final
+            self.state = self._new_state()
+            self.first = True
+            self.utterance_boundary = True
         return self.result(changed)
 
+    def flush(self):
+        return self._finalize(restart=True)
+
+    def finish(self):
+        return self._finalize(restart=False)
+
     def result(self, changed=False):
-        return {"text": self.committed, "preview": self.candidate[-600:],
+        return {"text": self.committed, "preview": (self.committed + self.pending_text)[-600:],
+                "pending": self.pending_text[-600:],
                 "changed": changed, "device": "cuda:0",
                 "window_seconds": round(self.max_window / 16000, 2)}
 
@@ -191,6 +233,8 @@ def main():
                         result = decoder.feed(pcm)
                     elif request["op"] == "finish":
                         result = decoder.finish()
+                    elif request["op"] == "flush":
+                        result = decoder.flush()
                     else:
                         raise ValueError("未知流式请求")
                 result["inference_ms"] = round((time.monotonic() - started) * 1000, 2)
