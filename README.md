@@ -4,15 +4,15 @@
 
 ## 当前状态（2026-10-02）
 
-- 已改为 **Tailnet 主机与端口配置**，默认 `https://rtx4090.nase-stairs.ts.net:8097`，支持 Tailnet IPv4、IPv6 和完整 `*.ts.net` 主机名，协议可选 HTTPS/HTTP。既有已保存地址保留，手机鉴权与正式流式协议仍待定稿。
+- 已有 **Tailnet 主机与端口配置**。V1 正式识别默认使用可修改的 DNS 主机 `rtx4090.nase-stairs.ts.net` 与 HTTPS/WSS 端口 `8097`；裸 IP 仅用于无凭据诊断。历史 HTTP/地址配置不等于正式识别入口。
 - 用户先自行连接 Pocket/Tailscale；App 只检查连接并显示错误，不启动或重连 VPN。拒绝 localhost、普通局域网/公网目标；不使用 USB 转发、临时代理或本地 SSH。
-- 默认端点只是初始设置。PC 的 `8097` 当前仍只监听 loopback；Tailnet HTTPS/WSS 入口尚未部署，不能把默认值当作已可用移动入口。
-- **手机听写尚不可用。** 旧 WAV 接口会隐式替换 PC 模型，现已停止调用；新接口确认并实现前，开始听写先检查连接并说明原因，不采集/上传音频。文件测试路径也不能绕过此限制。
+- 默认端点只是初始设置。上次核查 PC 的 `8097` 仅监听 loopback；本轮未重新探测服务。V1 定稿文档注明移动入口尚未部署，不能把默认值当作已可用入口。
+- [Voice 移动接口 V1](/home/sky/tools/oneaxe-voice/docs/mobile-api-v1.md) 已定稿；Voice Lab 已预实现能力查询、流式客户端、连续 PCM、会话身份/序号检查、累计固定全文提交、取消、流控和凭据备份排除。候选 APK 构建及 18 项本地测试通过；服务端尚未实现/部署，未接真实服务、未在设备上验收这版客户端，不能称手机听写已可用。旧 WAV 接口仍禁用。
 - “录音检查与回放”可独立使用，不依赖连接，不上传录音；不录音的固定文字输入仍可验证输入适配。
 
 ## 设置与使用
 
-打开 App 的“连接设置”，选择协议，填写 Tailscale 主机及端口，再点“保存连接设置”和“检查已保存的连接”。支持例如 `100.76.106.96`、`rtx4090.nase-stairs.ts.net`；IPv6 主机栏不带方括号。无效配置不覆盖已保存配置。
+打开 App 的“连接设置”，填写 Tailnet DNS 主机及端口并保存，再检查连接。正式听写使用经系统证书和主机名校验的 HTTPS/WSS；裸 IP 仅用于无凭据诊断。无效配置不覆盖已保存配置。
 
 旧 localhost 地址和旧 lab token 在首次打开新版时作废。手机专用凭据可稍后设置，不要复制 PC 模型管理令牌；凭据用 Android Keystore 加密保存、不回显。同端点保存且留空时保留现有凭据，换协议/地址/端口后旧凭据失效，可用“清除手机凭据”单独清除。
 
@@ -25,7 +25,7 @@
 从本目录执行：
 
 ```bash
-ANDROID_HOME=/home/sky/tools/android /home/sky/tools/oneaxe-pocket/android/gradlew --offline --no-daemon :app:assembleDebug
+ANDROID_HOME=/home/sky/tools/android /home/sky/tools/oneaxe-pocket/android/gradlew --offline --no-daemon :app:testDebugUnitTest :app:assembleDebug
 ```
 
 产物：`app/build/outputs/apk/debug/app-debug.apk`，仍为独立 debug APK。
@@ -34,7 +34,7 @@ ANDROID_HOME=/home/sky/tools/android /home/sky/tools/oneaxe-pocket/android/gradl
 
 ## 接口协作与历史证据
 
-- [接口交接请求](../../docs/mobile-workspace/voice-api-handoff-2026-10-02.md)：给 Voice 会话协商设备权限、只用当前模型、双端并发与 Tailnet 入口。用户已转来 Voice 会话反馈；[Pocket 回复](../../docs/mobile-workspace/voice-api-response-2026-10-02.md)接受版本化 API、DNS/HTTPS/WSS 和 R2T2 双端先验方向。完整消息/认证契约尚未定稿，不是已实现协议。
+- [接口交接请求](../../docs/mobile-workspace/voice-api-handoff-2026-10-02.md)与[Pocket 回复](../../docs/mobile-workspace/voice-api-response-2026-10-02.md)保留协商历史；[正式 V1 契约](/home/sky/tools/oneaxe-voice/docs/mobile-api-v1.md)已定，服务端尚未实现部署。[客户端预实现记录](../../docs/mobile-workspace/voice-v1-client-preparation-2026-10-02.md)区分源码、构建、进程内测试与真实 E2E。
 - [连接、模型与并发复核](../../docs/mobile-workspace/voice-connection-review-2026-10-02.md)：旧实现的实际副作用与失败原因。
 - [2026-10-01 真机记录](tests/device-e2e-2026-10-01.md)：保留当时临时 USB 环境下的普通/弱音/静音/中文样本、麦克风回放与输入结果。这些历史结果不代表正式 Tailnet 接入、手机无模型权限或双端并发已完成。
 - `tools/voice_lab_proxy.py`、`tools/pair_device.py` 仅保留为旧实验源码；不再作为手机连接恢复方式，不运行它们来绕过新要求。

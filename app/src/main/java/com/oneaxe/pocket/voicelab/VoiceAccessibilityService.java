@@ -30,9 +30,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 import java.io.File;
 import java.util.Arrays;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 
 public final class VoiceAccessibilityService extends AccessibilityService {
     private static volatile boolean anySessionActive;
@@ -53,11 +51,17 @@ public final class VoiceAccessibilityService extends AccessibilityService {
     private volatile boolean cancelled;
     private volatile boolean foregroundStarted;
     private boolean checkingConnection;
-    private int connectionCheckId;
-    private Thread recorderThread;
-    private Thread uploadThread;
-    private ArrayBlockingQueue<byte[]> segments;
-    private static final byte[] END = new byte[0];
+    private volatile DictationRun activeRun;
+
+    private static final class DictationRun {
+        final DictationDraft transcript = new DictationDraft();
+        final VoiceClient.Opening opening = new VoiceClient.Opening();
+        volatile boolean capturing;
+        volatile boolean cancelled;
+        volatile AudioRecord audio;
+        volatile Thread thread;
+        volatile VoiceClient.Stream stream;
+    }
 
     @Override protected void onServiceConnected() {
         windows = (WindowManager) getSystemService(WINDOW_SERVICE);
@@ -112,6 +116,14 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         if (source == null) return;
         if (source.isPassword()) lastFocused = null;
         else if (source.isEditable()) lastFocused = source;
+        DictationRun run = activeRun;
+        if (run != null && target != null &&
+                event.getEventType() == AccessibilityEvent.TYPE_VIEW_FOCUSED &&
+                !target.equals(source)) {
+            run.transcript.detachTarget();
+            target = null;
+            message("输入目标已变化；识别文字将保留在草稿中");
+        }
     }
     @Override public void onInterrupt() { cancelRecording(); }
     @Override public void onDestroy() {
@@ -163,6 +175,15 @@ public final class VoiceAccessibilityService extends AccessibilityService {
                 menu.addView(fixture);
             }
         }
+        DictationRun previewRun = activeRun;
+        if (previewRun != null && !previewRun.transcript.pending().isEmpty()) {
+            TextView preview = new TextView(this);
+            preview.setText("候选：" + previewRun.transcript.pending());
+            preview.setMaxLines(3);
+            preview.setTextColor(Color.DKGRAY);
+            menu.addView(preview);
+        }
+        if (previewRun != null) draft = new StringBuffer(previewRun.transcript.fixed());
         if (draft.length() > 0) {
             Button copy = new Button(this);
             copy.setText("复制本轮草稿");
@@ -184,43 +205,67 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         if (menu != null) { windows.removeView(menu); menu = null; }
     }
 
-    private void startRecording() {
-        checkBeforeDictation(false);
-    }
+    private void startRecording() { openDictation(false); }
+    private void startFixture() { openDictation(true); }
 
-    private void checkBeforeDictation(boolean fixture) {
-        if (sessionActive || checkingConnection) return;
-        checkingConnection = true;
-        anySessionActive = true;
-        int request = ++connectionCheckId;
-        if (bubble != null) bubble.setText("连");
-        new Thread(() -> {
-            String failure = null;
-            try { VoiceClient.requireDictationReady(this); }
-            catch (Exception e) {
-                failure = e.getMessage() == null ? "连接检查失败，请检查 Tailscale 和电脑服务" : e.getMessage();
-            }
-            String result = failure;
-            ui.post(() -> {
-                if (request != connectionCheckId) return;
-                checkingConnection = false;
-                anySessionActive = sessionActive;
-                if (bubble != null) bubble.setText("麦");
-                if (result != null) { message(result); return; }
-                if (fixture) startFixtureWithReadyConnection();
-                else startRecordingWithReadyConnection();
-            });
-        }, "voice-connection-check").start();
-    }
-
-    private void startRecordingWithReadyConnection() {
-        if (sessionActive) return;
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            message("请先在 Voice Lab 授予麦克风权限"); return;
+    private void openDictation(boolean fixture) {
+        if (activeRun != null || checkingConnection) return;
+        if (!fixture && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            message("请先在 Voice Lab 授予麦克风权限");
+            return;
         }
         if (!prepareTarget()) return;
+        DictationRun run = new DictationRun();
+        activeRun = run;
+        checkingConnection = true;
+        sessionActive = true;
+        anySessionActive = true;
+        cancelled = false;
         draft = new StringBuffer();
-        segments = new ArrayBlockingQueue<>(8);
+        bubble.setText("连");
+        new Thread(() -> {
+            try {
+                VoiceClient.Stream stream = VoiceClient.open(this, new VoiceClient.Listener() {
+                    @Override public void onText(String fixedText, String pending) {
+                        if (activeRun != run) return;
+                        try {
+                            // Save before posting to the UI: cancellation may overtake the UI queue.
+                            if (!run.transcript.receive(fixedText, pending)) return;
+                        } catch (IllegalArgumentException e) {
+                            ui.post(() -> failRun(run, "固定文字不连续，本轮已停止自动输入"));
+                            return;
+                        }
+                        ui.post(() -> applyDraft(run));
+                    }
+                    @Override public void onTerminal(String status, boolean complete) {
+                        ui.post(() -> endRun(run, status));
+                    }
+                }, run.opening);
+                run.stream = stream;
+                ui.post(() -> {
+                    if (activeRun != run || run.cancelled) { stream.cancel(); return; }
+                    checkingConnection = false;
+                    if (!fixture && !startMicrophoneForeground()) {
+                        failRun(run, "无法启动麦克风前台服务，本轮未录音");
+                        return;
+                    }
+                    run.capturing = true;
+                    recording = true;
+                    bubble.setText(fixture ? "测" : "停");
+                    run.thread = new Thread(() -> {
+                        if (fixture) fixtureLoop(run, new File(getFilesDir(), "fixture.wav"));
+                        else captureLoop(run);
+                    }, fixture ? "voice-fixture" : "voice-capture");
+                    run.thread.start();
+                });
+            } catch (Exception e) {
+                ui.post(() -> failRun(run, e.getMessage() == null
+                        ? "无法建立听写会话，请检查连接和电脑服务" : e.getMessage()));
+            }
+        }, "voice-v1-connect").start();
+    }
+
+    private boolean startMicrophoneForeground() {
         try {
             NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
             manager.createNotificationChannel(new NotificationChannel("voice_capture", "Voice Lab 录音", NotificationManager.IMPORTANCE_LOW));
@@ -230,62 +275,78 @@ public final class VoiceAccessibilityService extends AccessibilityService {
                     .setOngoing(true).build();
             if (android.os.Build.VERSION.SDK_INT >= 30) {
                 startForeground(42, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
-            } else {
-                startForeground(42, notification);
-            }
+            } else startForeground(42, notification);
             foregroundStarted = true;
-        } catch (Exception e) {
-            message("无法启动麦克风前台服务"); return;
-        }
-        recording = true;
-        cancelled = false;
-        sessionActive = true;
-        anySessionActive = true;
-        bubble.setText("停");
-        ArrayBlockingQueue<byte[]> queue = segments;
-        uploadThread = new Thread(() -> uploadLoop(queue), "voice-upload");
-        recorderThread = new Thread(() -> captureLoop(queue), "voice-capture");
-        uploadThread.start();
-        recorderThread.start();
+            return true;
+        } catch (Exception e) { return false; }
     }
 
     private void stopRecording() {
+        DictationRun run = activeRun;
+        if (run == null) return;
         recording = false;
-        if (bubble != null) bubble.setText("麦");
-    }
-
-    private void startFixture() {
-        checkBeforeDictation(true);
-    }
-
-    private void startFixtureWithReadyConnection() {
-        if (sessionActive || !prepareTarget()) return;
-        File fixture = new File(getFilesDir(), "fixture.wav");
-        draft = new StringBuffer();
-        cancelled = false;
-        sessionActive = true;
-        anySessionActive = true;
-        segments = new ArrayBlockingQueue<>(8);
-        ArrayBlockingQueue<byte[]> queue = segments;
-        bubble.setText("测");
-        uploadThread = new Thread(() -> uploadLoop(queue), "voice-upload");
-        recorderThread = new Thread(() -> fixtureLoop(queue, fixture), "voice-fixture");
-        uploadThread.start();
-        recorderThread.start();
+        stopCapture(run);
+        if (bubble != null) bubble.setText("收");
     }
 
     private void cancelRecording() {
-        ++connectionCheckId;
-        checkingConnection = false;
-        if (!sessionActive) anySessionActive = false;
+        DictationRun run = activeRun;
+        if (run == null) return;
         cancelled = true;
+        endRun(run, "已取消；已收到的文字保留在草稿中");
+    }
+
+    private void failRun(DictationRun run, String status) { endRun(run, status); }
+
+    private void endRun(DictationRun run, String status) {
+        if (activeRun != run) return;
+        // Close both receive and input gates before the transport or old callbacks can race us.
+        run.transcript.close();
+        draft = new StringBuffer(run.transcript.fixed());
+        run.cancelled = true;
+        activeRun = null;
+        run.opening.cancel();
+        stopCapture(run);
+        if (run.stream != null) run.stream.cancel();
         recording = false;
-        if (segments != null) segments.clear();
+        sessionActive = false;
+        checkingConnection = false;
+        anySessionActive = false;
+        target = null;
+        if (foregroundStarted) stopForeground(STOP_FOREGROUND_REMOVE);
+        foregroundStarted = false;
         if (bubble != null) bubble.setText("麦");
+        if (status != null && !status.isEmpty()) message(status);
+    }
+
+    private void stopCapture(DictationRun run) {
+        synchronized (run) {
+            run.capturing = false;
+            AudioRecord audio = run.audio;
+            if (audio != null) {
+                try { audio.stop(); } catch (IllegalStateException ignored) { }
+            }
+        }
+        Thread thread = run.thread;
+        if (thread != null) LockSupport.unpark(thread);
+    }
+
+    private void applyDraft(DictationRun run) {
+        if (activeRun != run || run.cancelled) return;
+        draft = new StringBuffer(run.transcript.fixed());
+        String addition = run.transcript.addition();
+        if (addition.isEmpty()) return;
+        if (target != null && insert(addition)) {
+            run.transcript.inserted(addition);
+        } else {
+            run.transcript.detachTarget();
+            target = null;
+            message("目标已变化；本轮文字保存在悬浮菜单草稿中");
+        }
     }
 
     private boolean prepareTarget() {
-        if (!sessionActive) cancelled = false;
+        cancelled = false;
         target = null;
         AccessibilityNodeInfo root = getRootInActiveWindow();
         AccessibilityNodeInfo focused = root == null ? null : root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
@@ -305,120 +366,85 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         return true;
     }
 
-    private void captureLoop(ArrayBlockingQueue<byte[]> queue) {
+    private void captureLoop(DictationRun run) {
         AudioRecord audio = null;
-        PcmSegmenter segmenter = new PcmSegmenter(queue);
         try {
+            int frameBytes = run.stream.frameBytes();
             int buffer = Math.max(AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT), 6400);
+                    AudioFormat.ENCODING_PCM_16BIT), frameBytes * 2);
             audio = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, 16000,
                     AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, buffer);
-            if (audio.getState() != AudioRecord.STATE_INITIALIZED) throw new IllegalStateException("麦克风不可用");
-            audio.startRecording();
-            Log.i("VoiceLabAudio", "source=mic audio_source=VOICE_RECOGNITION session=" +
-                    audio.getAudioSessionId() + " routed_type=" +
-                    (audio.getRoutedDevice() == null ? -1 : audio.getRoutedDevice().getType()));
-            byte[] frame = new byte[640];
+            synchronized (run) {
+                run.audio = audio;
+                if (audio.getState() != AudioRecord.STATE_INITIALIZED) throw new IllegalStateException();
+                if (run.cancelled || !run.capturing) return;
+                audio.startRecording();
+                if (audio.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) throw new IllegalStateException();
+            }
+            byte[] frame = new byte[frameBytes];
             int filled = 0;
-            while (recording) {
+            while (run.capturing && !run.cancelled) {
                 int size = audio.read(frame, filled, frame.length - filled, AudioRecord.READ_BLOCKING);
-                if (size < 0) throw new IllegalStateException("录音设备读取失败");
+                if (size < 0) {
+                    if (!run.capturing) break;
+                    throw new IllegalStateException();
+                }
                 if (size == 0) continue;
                 filled += size;
-                if (filled != frame.length) continue;
-                segmenter.feed(Arrays.copyOf(frame, frame.length));
-                filled = 0;
-            }
-            if (!cancelled) {
-                if (filled > 0) {
-                    Arrays.fill(frame, filled, frame.length, (byte) 0);
-                    segmenter.feed(Arrays.copyOf(frame, frame.length));
+                if (filled == frame.length) {
+                    if (!run.cancelled && !run.stream.offerAudio(Arrays.copyOf(frame, filled))) return;
+                    filled = 0;
                 }
-                segmenter.finish();
             }
+            // A short tail contains only real samples; no synthetic padding or VAD deletion.
+            int tail = filled & ~1;
+            if (!run.cancelled && tail > 0 && !run.stream.offerAudio(Arrays.copyOf(frame, tail))) return;
         } catch (Exception e) {
-            ui.post(() -> message("录音失败：" + e.getClass().getSimpleName()));
+            if (!run.cancelled) {
+                run.cancelled = true;
+                ui.post(() -> failRun(run, "录音设备读取失败，本轮已停止"));
+            }
         } finally {
+            run.audio = null;
             if (audio != null) {
-                try { audio.stop(); } catch (IllegalStateException ignored) {}
+                try { audio.stop(); } catch (IllegalStateException ignored) { }
                 audio.release();
             }
-            recording = false;
-            finishQueue(queue);
-            ui.post(() -> { if (bubble != null) bubble.setText("麦"); });
+            finishCapture(run);
         }
     }
 
-    private void fixtureLoop(ArrayBlockingQueue<byte[]> queue, File fixture) {
+    private void fixtureLoop(DictationRun run, File fixture) {
         try {
             byte[] pcm = WavPcm16.readMono16k(fixture);
-            Log.i("VoiceLabAudio", "source=fixture duration_ms=" + pcm.length / 32);
-            PcmSegmenter segmenter = new PcmSegmenter(queue);
-            for (int offset = 0; offset < pcm.length && !cancelled; offset += 640) {
-                byte[] frame = new byte[640];
-                System.arraycopy(pcm, offset, frame, 0, Math.min(640, pcm.length - offset));
-                segmenter.feed(frame);
-            }
-            if (!cancelled) segmenter.finish();
-        } catch (Exception e) {
-            ui.post(() -> message("测试音频失败：" + e.getClass().getSimpleName()));
-        } finally {
-            finishQueue(queue);
-        }
-    }
-
-    private void finishQueue(ArrayBlockingQueue<byte[]> queue) {
-        try {
-            if (!queue.offer(END, 5, TimeUnit.SECONDS)) {
-                queue.clear();
-                queue.offer(END);
-                ui.post(() -> message("识别队列未能排空，本轮请检查草稿"));
-            }
-        } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
-    }
-
-    private void uploadLoop(ArrayBlockingQueue<byte[]> queue) {
-        try {
-            while (true) {
-                byte[] pcm = queue.take();
-                if (pcm == END) break;
-                if (cancelled) continue;
-                String raw = VoiceClient.transcribe(this, pcm);
-                if (cancelled) continue;
-                String text = cleanText(raw);
-                if (text.isEmpty()) continue;
-                if (draft.length() > 0 && draft.charAt(draft.length() - 1) < 128 &&
-                        !Character.isWhitespace(draft.charAt(draft.length() - 1)) && isAsciiWord(text.charAt(0))) {
-                    text = " " + text;
+            int frameBytes = run.stream.frameBytes();
+            long started = System.nanoTime();
+            for (int offset = 0; offset < pcm.length && run.capturing && !run.cancelled;) {
+                int count = Math.min(frameBytes, pcm.length - offset);
+                long due = started + (offset + count) * 1_000_000_000L / 32000;
+                while (run.capturing && !run.cancelled && System.nanoTime() < due) {
+                    LockSupport.parkNanos(Math.min(due - System.nanoTime(), 50_000_000L));
                 }
-                draft.append(text);
-                String addition = text;
-                CountDownLatch committed = new CountDownLatch(1);
-                ui.post(() -> {
-                    if (target != null && !insert(addition)) {
-                        target = null;
-                        message("目标已变化；本轮文字保存在悬浮菜单草稿中");
-                    }
-                    committed.countDown();
-                });
-                if (!committed.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("输入操作超时");
+                if (!run.capturing || run.cancelled) break;
+                if (!run.stream.offerAudio(Arrays.copyOfRange(pcm, offset, offset + count))) return;
+                offset += count;
             }
         } catch (Exception e) {
+            run.cancelled = true;
+            ui.post(() -> failRun(run, "测试音频无法读取，请检查 16 kHz 单声道 PCM16 WAV 文件"));
+        } finally { finishCapture(run); }
+    }
+
+    private void finishCapture(DictationRun run) {
+        run.capturing = false;
+        ui.post(() -> {
+            if (activeRun != run) return;
             recording = false;
-            queue.clear();
-            ui.post(() -> message("听写失败：" +
-                    (e.getMessage() != null && e.getMessage().startsWith("Voice HTTP ")
-                            ? e.getMessage() : e.getClass().getSimpleName())));
-        } finally {
-            try { recorderThread.join(6000); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
-            sessionActive = false;
-            anySessionActive = false;
-            ui.post(() -> {
-                if (foregroundStarted) stopForeground(STOP_FOREGROUND_REMOVE);
-                foregroundStarted = false;
-                if (bubble != null) bubble.setText("麦");
-            });
-        }
+            if (foregroundStarted) stopForeground(STOP_FOREGROUND_REMOVE);
+            foregroundStarted = false;
+            if (bubble != null) bubble.setText("收");
+        });
+        if (!run.cancelled) run.stream.finish();
     }
 
     private boolean insert(String addition) {
@@ -450,25 +476,6 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         expectedText = updated;
         cursor = newCursor;
         return true;
-    }
-
-    private static String cleanText(String value) {
-        StringBuilder result = new StringBuilder();
-        boolean space = false;
-        for (int offset = 0; offset < value.length();) {
-            int codePoint = value.codePointAt(offset);
-            offset += Character.charCount(codePoint);
-            if (Character.isWhitespace(codePoint)) { space = result.length() > 0; continue; }
-            if (Character.isISOControl(codePoint) || codePoint >= 0xD800 && codePoint <= 0xDFFF) continue;
-            if (space) result.append(' ');
-            result.appendCodePoint(codePoint);
-            space = false;
-        }
-        return result.toString();
-    }
-
-    private static boolean isAsciiWord(char c) {
-        return c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z';
     }
 
     private WindowManager.LayoutParams params(int widthDp, int heightDp) {

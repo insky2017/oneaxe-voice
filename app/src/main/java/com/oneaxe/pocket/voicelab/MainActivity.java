@@ -46,11 +46,11 @@ public final class MainActivity extends Activity {
         TextView title = label(layout, "OneAxe Voice Lab");
         title.setTextSize(23);
         label(layout, "请先自行连接 Tailscale，再访问电脑的语音服务。连接失败时会显示原因，不会自动开启 VPN。");
-        label(layout, "手机只使用电脑当前加载的模型。当前版本可配置和检查连接、录音回放；手机听写等待电脑端接口接入。");
+        label(layout, "手机只使用电脑当前已就绪的模型。请先查询听写能力；电脑端需开启手机接口并配发专用凭据。");
 
         TextView section = label(layout, "连接设置");
         section.setTextSize(19);
-        label(layout, "协议（默认 HTTPS，仅通过 Tailscale 连接）");
+        label(layout, "协议（听写须使用 HTTPS 和完整 Tailnet 主机名；HTTP 或 IP 仅用于无凭据连接诊断）");
         scheme = new Spinner(this);
         scheme.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
                 new String[]{"https", "http"}));
@@ -74,7 +74,12 @@ public final class MainActivity extends Activity {
 
         Button save = button(layout, "保存连接设置");
         Button check = button(layout, "检查已保存的连接");
+        Button capabilities = button(layout, "查询听写能力");
         save.setOnClickListener(v -> {
+            if (VoiceAccessibilityService.isAnySessionActive()) {
+                showConnectionResult("请先结束或取消听写，再修改连接设置");
+                return;
+            }
             try {
                 int value;
                 try { value = Integer.parseInt(port.getText().toString().trim()); }
@@ -110,7 +115,33 @@ public final class MainActivity extends Activity {
                 });
             });
         });
+        capabilities.setOnClickListener(v -> {
+            if (checking) return;
+            checking = true;
+            capabilities.setEnabled(false);
+            check.setEnabled(false);
+            save.setEnabled(false);
+            connectionStatus.setText("正在查询电脑当前模型和移动听写能力 …");
+            connectionChecks.execute(() -> {
+                String result;
+                try { result = VoiceClient.capabilitySummary(this); }
+                catch (Exception e) { result = e.getMessage() == null ? "无法查询听写能力，请检查电脑服务" : e.getMessage(); }
+                String message = result;
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    checking = false;
+                    capabilities.setEnabled(true);
+                    check.setEnabled(true);
+                    save.setEnabled(true);
+                    showConnectionResult(message);
+                });
+            });
+        });
         button(layout, "清除手机凭据").setOnClickListener(v -> {
+            if (VoiceAccessibilityService.isAnySessionActive() || checking) {
+                showConnectionResult("请先结束听写或连接检查，再清除手机凭据");
+                return;
+            }
             Settings.clearToken(this);
             token.setText("");
             showConnectionResult("手机凭据已清除，主机和端口保留");
