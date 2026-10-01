@@ -85,6 +85,13 @@ class Desktop:
         self.started = 0.0
         self.last_toggle = 0.0
         self.prepare_task = None
+        self.unload_task = None
+        self.model_monitor_task = None
+        self.model_status = {"state": "unavailable", "model_loaded": False,
+                             "auto_unload": False, "idle_seconds": 0}
+        self.model_error = None
+        self.model_revision = 0
+        self.closing = False
         self.menu_until = 0.0
         self.preview = ""
         self.pending_text = ""
@@ -106,6 +113,9 @@ class Desktop:
         value["selected_mode"] = config["mode"]
         value.setdefault("mode", config["mode"])
         value["preparing"] = self.prepare_task is not None
+        value["model_unloading"] = self.unload_task is not None
+        value["model_status"] = dict(self.model_status)
+        value["model_error"] = self.model_error
         value["preview_enabled"] = config["preview"]
         value["clipboard_only"] = config["clipboard_only"]
         value["menu_paused"] = time.monotonic() < self.menu_until
@@ -144,12 +154,37 @@ class Desktop:
                     validate_preview({**config, key: value})
                 elif key == "max_session_seconds" and isinstance(value, (float, int)) and 10 <= value <= 3600:
                     pass
-                elif key not in {"preview", "clipboard_only"} or not isinstance(value, bool):
+                elif key not in {"preview", "clipboard_only", "auto_unload"} or not isinstance(value, bool):
                     raise ValueError("不支持的桌面设置")
-                config[key] = value
-            self._atomic_json("desktop.json", config)
-            if "mode" in options and not self.task and self.prepare_task is None:
-                self.prepare_task = asyncio.create_task(self._prepare_selected())
+                if key != "auto_unload":
+                    config[key] = value
+            if "auto_unload" in options:
+                async with self._model_client(timeout=2) as client:
+                    result = await self._request(client, "/api/dictation/policy",
+                                                 json={"auto_unload": options["auto_unload"]}, retry_busy=False)
+                    self._set_model_status(result)
+            changes = {key: value for key, value in options.items() if key != "auto_unload"}
+            if changes:
+                # Another socket command can update preferences while the policy
+                # request is in flight. Merge only this command's fields.
+                current = {**preferences(self.settings), **changes}
+                validate_preview(current)
+                self._atomic_json("desktop.json", current)
+            if "mode" in options and not self.task:
+                self._start_prepare()
+            return self.status()
+        if action == "model_load":
+            if self.task:
+                raise ValueError("正在听写或收尾，请结束本轮后管理模型")
+            self._start_prepare()
+            return self.status()
+        if action == "model_unload":
+            if self.task or self.prepare_task:
+                raise ValueError("正在听写、收尾或加载，请完成后再卸载模型")
+            if self.unload_task is None:
+                self.model_error = None
+                self.model_revision += 1
+                self.unload_task = asyncio.create_task(self._unload_model())
             return self.status()
         if action == "copy":
             path = self.settings.runtime_dir / "last-transcript.txt"
@@ -177,6 +212,7 @@ class Desktop:
                 await notify("OneAxe Voice 正在收尾", "剩余语音按顺序识别，完成后可开启下一轮")
             return self.status()
         config = preferences(self.settings)
+        self.model_error = None
         self.state = {"state": "starting", "last_action": None, "last_error": None,
                       "capture_active": True, "recognizing": False, "warming": True,
                       "segments_done": 0, "segments_pasted": 0, "queued_segments": 0,
@@ -200,19 +236,80 @@ class Desktop:
         finally:
             temporary.unlink(missing_ok=True)
 
+    def _model_client(self, timeout=250):
+        token = self.settings.token_path.read_text().strip()
+        return httpx.AsyncClient(base_url=self.settings.api_url, trust_env=False,
+                                 timeout=timeout, headers={"Authorization": "Bearer " + token})
+
+    def _set_model_status(self, value):
+        self.model_revision += 1
+        self.model_status = value
+
+    def _start_prepare(self):
+        if self.prepare_task is None and not self.closing:
+            self.model_error = None
+            self.model_revision += 1
+            self.prepare_task = asyncio.create_task(self._prepare_selected())
+
+    def start_background(self):
+        """Preload the saved selection once; status polling must never load it."""
+        self.model_monitor_task = asyncio.create_task(self._monitor_model())
+        self._start_prepare()
+
+    async def _monitor_model(self):
+        async with self._model_client(timeout=2) as client:
+            while True:
+                revision = self.model_revision
+                try:
+                    response = await client.get("/api/dictation/status")
+                    response.raise_for_status()
+                    value = response.json()
+                except Exception:
+                    value = {**self.model_status, "state": "unavailable", "model_loaded": False}
+                if revision == self.model_revision:
+                    self.model_status = value
+                await asyncio.sleep(1)
+
+    async def _unload_model(self):
+        try:
+            async with self._model_client() as client:
+                # Busy means the request was refused. Never queue an unload behind
+                # someone else's recording, which could finish much later.
+                self._set_model_status(await self._request(
+                    client, "/api/dictation/unload", retry_busy=False))
+        except Exception as exc:
+            self.model_error = str(exc) if isinstance(exc, CaptureError) else "模型卸载失败，请检查本机服务后重试"
+        finally:
+            self.unload_task = None
+
     async def _prepare_selected(self):
         try:
-            token = self.settings.token_path.read_text().strip()
-            async with httpx.AsyncClient(base_url=self.settings.api_url, trust_env=False,
-                                         timeout=250, headers={"Authorization": "Bearer " + token}) as client:
+            if self.unload_task:
+                await asyncio.shield(self.unload_task)
+            async with self._model_client() as client:
+                startup_deadline = time.monotonic() + 15
                 while True:
-                    mode = preferences(self.settings)["mode"]
-                    self.state.update(preparing_mode=mode, last_error=None)
-                    await self._request(client, "/api/dictation/prepare", json={"mode": mode})
-                    if mode == preferences(self.settings)["mode"] or self.task:
+                    mode = self.state["mode"] if self.task else preferences(self.settings)["mode"]
+                    self.state["preparing_mode"] = mode
+                    try:
+                        result = await self._request(client, "/api/dictation/prepare", json={"mode": mode})
+                    except httpx.ConnectError:
+                        # systemd orders process startup, not HTTP readiness.
+                        if time.monotonic() >= startup_deadline:
+                            raise
+                        await asyncio.sleep(.5)
+                        continue
+                    except Exception:
+                        desired = self.state["mode"] if self.task else preferences(self.settings)["mode"]
+                        if desired != mode:
+                            continue
+                        raise
+                    self._set_model_status(result)
+                    desired = self.state["mode"] if self.task else preferences(self.settings)["mode"]
+                    if mode == desired:
                         break
-        except Exception:
-            self.state["last_error"] = "模式加载失败，可重试或切回稳听；详情见本机日志"
+        except Exception as exc:
+            self.model_error = str(exc) if isinstance(exc, CaptureError) else "模式加载失败，请重试或选择其他模式"
         finally:
             self.prepare_task = None
 
@@ -220,12 +317,12 @@ class Desktop:
         while time.monotonic() < self.menu_until:
             await asyncio.sleep(.05)
 
-    async def _request(self, client, path, **kwargs):
+    async def _request(self, client, path, retry_busy=True, **kwargs):
         """Retry only explicit busy rejections; never resubmit an uncertain request."""
         deadline = time.monotonic() + 30
         while True:
             response = await client.post(path, **kwargs)
-            if response.status_code == 429 and time.monotonic() < deadline:
+            if retry_busy and response.status_code == 429 and time.monotonic() < deadline:
                 await asyncio.sleep(0.5)
                 continue
             if response.is_error:
@@ -235,9 +332,13 @@ class Desktop:
 
     async def _warmup(self, client):
         try:
+            if self.unload_task:
+                await asyncio.shield(self.unload_task)
             if self.prepare_task:
                 await asyncio.shield(self.prepare_task)
-            return await self._request(client, "/api/dictation/warmup")
+            result = await self._request(client, "/api/dictation/warmup")
+            self.model_error = None
+            return result
         finally:
             self.state["warming"] = False
 
@@ -381,6 +482,8 @@ class Desktop:
 
     async def _consume_stream(self, queue, target, mode):
         from websockets.asyncio.client import connect
+        if self.unload_task:
+            await asyncio.shield(self.unload_task)
         if self.prepare_task:
             await asyncio.shield(self.prepare_task)
         token = self.settings.token_path.read_text().strip()
@@ -392,6 +495,7 @@ class Desktop:
             ready = json.loads(await asyncio.wait_for(ws.recv(), 250))
             if ready["type"] != "ready":
                 raise CaptureError(ready.get("detail", "流式引擎未就绪"))
+            self.model_error = None
             self.state["warming"] = False
             last_sent = 0.0
             pending_result = None
@@ -492,6 +596,8 @@ class Desktop:
             self.state.update(capture_active=False, recognizing=False, warming=False, voice_active=False,
                               queued_segments=0)
             self.task = None
+            if not self.closing and preferences(self.settings)["mode"] != self.state.get("mode"):
+                self._start_prepare()
 
 
 async def serve(settings: Settings) -> None:
@@ -536,11 +642,15 @@ async def serve(settings: Settings) -> None:
         server = await asyncio.start_unix_server(handle, str(path), limit=4096)
         path.chmod(0o600)
         async with server:
+            desktop.start_background()
             await shutdown.wait()
+            desktop.closing = True
             await desktop.dispatch("cancel")
-            if desktop.prepare_task:
-                desktop.prepare_task.cancel()
-                await asyncio.gather(desktop.prepare_task, return_exceptions=True)
+            background = [task for task in (desktop.prepare_task, desktop.unload_task,
+                                            desktop.model_monitor_task) if task]
+            for task in background:
+                task.cancel()
+            await asyncio.gather(*background, return_exceptions=True)
     finally:
         path.unlink(missing_ok=True)
         lock.close()

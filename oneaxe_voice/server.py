@@ -9,7 +9,7 @@ import os
 import uuid
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictBool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import JSONResponse
 
@@ -140,6 +140,20 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
 
     class ModeRequest(BaseModel):
         mode: str
+
+    class PolicyRequest(BaseModel):
+        auto_unload: StrictBool
+
+    @app.post("/api/dictation/policy")
+    async def policy(value: PolicyRequest):
+        return await worker_call(engine.set_auto_unload, value.auto_unload)
+
+    @app.post("/api/dictation/unload")
+    async def unload():
+        try:
+            return await worker_call(engine.unload)
+        except BusyError as exc:
+            raise HTTPException(429, str(exc), headers={"Retry-After": "2"}) from exc
 
     @app.post("/api/dictation/prepare")
     async def prepare(value: ModeRequest):

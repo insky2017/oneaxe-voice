@@ -11,7 +11,7 @@ Environment=HF_HUB_OFFLINE=1
 Environment=TRANSFORMERS_OFFLINE=1
 Environment=TOKENIZERS_PARALLELISM=false
 Environment=ONEAXE_VOICE_MEMORY_FRACTION=0.25
-Environment=ONEAXE_VOICE_IDLE_SECONDS=120
+Environment=ONEAXE_VOICE_IDLE_SECONDS=0
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=200

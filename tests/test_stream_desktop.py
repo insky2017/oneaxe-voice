@@ -18,6 +18,7 @@ class StreamDesktopTests(unittest.IsolatedAsyncioTestCase):
             settings = Settings(runtime_dir=Path(directory))
             settings.token_path.write_text('a' * 40)
             desktop = Desktop(settings)
+            desktop.model_error = 'prior preload failed'
             desktop.started = time.monotonic()
             desktop.state.update(mode='r2t2', segments_done=0, segments_pasted=0)
             queue = asyncio.Queue()
@@ -43,6 +44,7 @@ class StreamDesktopTests(unittest.IsolatedAsyncioTestCase):
                 await desktop._consume_stream(queue, None, 'r2t2')
             self.assertEqual(''.join(delivered), '涉及到体验。')
             self.assertEqual(delivered, ['涉及到', '体验。'])
+            self.assertIsNone(desktop.model_error)
             self.assertEqual(desktop.state['pause_flushes'], 1)
             self.assertEqual(desktop.records[-1]['reason'], 'pause')
             ui = await desktop.dispatch('ui')

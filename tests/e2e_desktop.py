@@ -135,11 +135,15 @@ def main():
                            clipboard_only=False,preview=True,preview_position='top',preview_anchor=[.5,.08])
             config.write_text(json.dumps(options))
             menu_owner=menu_select(mode)
-            # Selecting an already active item may not emit a toggle; request prepare
-            # explicitly so the test measures warm streaming rather than cold load.
-            control(settings,'configure',mode=mode)
-            wait_for(lambda:not control(settings,'status')['preparing'],250)
+            def selected_ready():
+                state = control(settings, 'status')
+                model = state.get('model_status', {})
+                return (not state['preparing'] and model.get('mode') == mode
+                        and model.get('model_loaded') and not model.get('busy'))
+            # Exercise the actual DBus menu activation, including the selected item.
+            wait_for(selected_ready,250)
             assert control(settings,'status')['last_error'] is None,control(settings,'status')
+            assert control(settings,'status').get('model_error') is None
             target=subprocess.Popen([sys.executable,str(ROOT/'tests/input_target.py'),str(test_state)])
             window=run('xdotool','search','--sync','--onlyvisible','--class','OneAxeVoiceTest').splitlines()[-1]
             run('xdotool','windowactivate','--sync',window)

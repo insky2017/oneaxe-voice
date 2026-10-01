@@ -28,6 +28,38 @@ from .preview_layout import anchor_from_position, monitor_for_window, overlay_po
 
 POSITIONS = {"top": "顶部居中", "bottom": "底部居中", "left": "左侧居中",
              "right": "右侧居中", "custom": "自定义位置"}
+MODEL_STATES = {"unloaded": "未加载", "loading": "加载中", "ready": "已就绪",
+                "transcribing": "识别中",
+                "unloading": "卸载中", "error": "加载失败", "unavailable": "服务未连接"}
+
+
+def display_status(state):
+    active = state.get("state", "idle") not in {"idle", "error", "stopped"}
+    if state.get("last_error"):
+        return "出现错误", "error"
+    if state.get("warming"):
+        return "加载模型", "loading"
+    if active:
+        if state.get("paste_paused") or state.get("clipboard_only"):
+            return "仅复制", "copied"
+        if state.get("capture_active"):
+            return "正在听写", "recording"
+        return "补齐文字", "finishing"
+    model = state.get("model_status") or {}
+    model_state = model.get("state", "unavailable")
+    if state.get("model_unloading") or model_state == "unloading":
+        return "卸载模型", "loading"
+    if state.get("preparing") or model_state == "loading":
+        return "加载模型", "loading"
+    if state.get("model_error") or model.get("last_error") or model_state == "error":
+        return "模型出错", "error"
+    return {
+        "ready": ("模型已就绪", "idle"),
+        "transcribing": ("模型识别中", "finishing"),
+        "loading": ("加载模型", "loading"),
+        "unloaded": ("模型未加载", "idle"),
+        "unavailable": ("服务未连接", "error"),
+    }.get(model_state, ("模型状态未知", "error"))
 
 
 def request(settings, action, **options):
@@ -81,9 +113,10 @@ class Tray:
         for mode, label in MODES.items():
             item = Gtk.RadioMenuItem.new_with_label_from_widget(group, label)
             group = group or item
-            item.connect("toggled", self.choose_mode, mode)
+            item.connect("activate", self.choose_mode, mode)
             self.menu.append(item)
             self.radios[mode] = item
+        self.create_model_menu()
         self.separator()
         self.auto = Gtk.CheckMenuItem(label="自动输入到原窗口")
         self.auto.connect("toggled", lambda item: self.configure(clipboard_only=not item.get_active()))
@@ -111,6 +144,7 @@ class Tray:
         self.separator()
         self.item("退出", self.quit)
         self.menu.show_all()
+        self.update_model_menu({}, connected=False)
         self.indicator.set_menu(self.menu)
         server = self.indicator.get_property("dbus-menu-server")
         self.menu_root = server.get_property("root-node")
@@ -149,8 +183,55 @@ class Tray:
             self.command("configure", **options)
 
     def choose_mode(self, item, mode):
-        if item.get_active():
+        if item.get_active() and not self.syncing:
             self.configure(mode=mode)
+
+    def create_model_menu(self):
+        self.model_root = Gtk.MenuItem(label="模型 · 服务未连接")
+        self.model_menu = Gtk.Menu()
+        self.model_root.set_submenu(self.model_menu)
+        self.menu.append(self.model_root)
+        self.model_error = Gtk.MenuItem(label="")
+        self.model_error.set_sensitive(False)
+        self.model_menu.append(self.model_error)
+        self.model_load = Gtk.MenuItem(label="立即加载")
+        self.model_load.connect("activate", lambda *_: self.command("model_load"))
+        self.model_menu.append(self.model_load)
+        self.model_unload = Gtk.MenuItem(label="立即卸载")
+        self.model_unload.connect("activate", lambda *_: self.command("model_unload"))
+        self.model_menu.append(self.model_unload)
+        self.model_menu.append(Gtk.SeparatorMenuItem())
+        self.auto_unload = Gtk.CheckMenuItem(label="空闲 2 分钟后自动卸载")
+        self.auto_unload.connect("toggled", lambda item: self.configure(auto_unload=item.get_active()))
+        self.model_menu.append(self.auto_unload)
+        self.update_model_menu({}, connected=False)
+
+    def update_model_menu(self, state, connected=True):
+        model = state.get("model_status") or {}
+        model_state = model.get("state", "unavailable") if connected else "unavailable"
+        if connected and state.get("model_unloading"):
+            model_state = "unloading"
+        elif connected and state.get("preparing"):
+            model_state = "loading"
+        selected = state.get("selected_mode", "vad")
+        loaded_mode = model.get("mode")
+        ready = model_state in {"ready", "transcribing"} and model.get("model_loaded") and loaded_mode == selected
+        active = state.get("state", "idle") not in {"idle", "error", "stopped"}
+        busy = (active or model.get("busy") or state.get("preparing") or
+                state.get("model_unloading") or model_state == "transcribing")
+        transitioning = model_state in {"loading", "unloading"}
+        connected = connected and model_state != "unavailable"
+        self.model_root.set_label("模型 · " + MODEL_STATES.get(model_state, "状态未知"))
+        error = state.get("model_error") or model.get("last_error")
+        self.model_error.set_label(str(error)[:100] if error else "")
+        self.model_error.set_visible(bool(error))
+        self.model_load.set_sensitive(connected and not busy and not transitioning and not ready)
+        self.model_unload.set_sensitive(connected and not busy and not transitioning and
+                                        bool(model.get("model_loaded")))
+        self.auto_unload.set_sensitive(connected)
+        self.syncing = True
+        self.auto_unload.set_active(bool(model.get("auto_unload", False)))
+        self.syncing = False
 
     def choose_position(self, item, position):
         if item.get_active() and not self.syncing:
@@ -184,6 +265,7 @@ class Tray:
         except Exception:
             self.title.set_label("OneAxe Voice · 服务未连接")
             self.set_icon("error", "服务未连接")
+            self.update_model_menu({}, connected=False)
             self.preview.hide()
             return False
         was_active = self.was_active
@@ -197,18 +279,8 @@ class Tray:
         mode = state.get("mode", "vad")
         selected = state.get("selected_mode", "vad")
         active = state.get("state") not in {"idle", "error", "stopped"}
-        if state.get("last_error"):
-            status, icon = "出现错误", "error"
-        elif state.get("warming") or state.get("preparing"):
-            status, icon = "加载模型", "loading"
-        elif state.get("paste_paused") or state.get("clipboard_only") and active:
-            status, icon = "仅复制", "copied"
-        elif state.get("capture_active"):
-            status, icon = "正在听写", "recording"
-        elif active:
-            status, icon = "补齐文字", "finishing"
-        else:
-            status, icon = "待机", "idle"
+        status, icon = display_status(state)
+        if not active:
             mode = selected
         self.title.set_label(f"OneAxe Voice · {status} · {MODES.get(mode, mode).split(' · ')[0]}")
         self.device.set_label("麦克风：" + state.get("source", "DJI Mic"))
@@ -219,6 +291,7 @@ class Tray:
         self.toggle.set_label("结束听写并补齐尾部    F8" if active else "开始听写    F8")
         self.toggle.set_sensitive(not active or bool(state.get("capture_active")))
         self.cancel.set_sensitive(active)
+        self.update_model_menu(state)
         self.syncing = True
         self.radios[selected].set_active(True)
         self.auto.set_active(not state.get("clipboard_only", False))

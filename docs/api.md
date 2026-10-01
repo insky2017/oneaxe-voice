@@ -37,14 +37,16 @@ ffmpeg -nostdin -i /absolute/path/input.m4a -t 60 -ac 1 -ar 16000 -c:a pcm_s16le
 | --- | --- | --- |
 | `GET /health` | 无 | HTTP 存活检查；不加载或验证模型 |
 | `GET /api/dictation/status` | Bearer | 模型加载、忙碌、设备和资源配置 |
-| `POST /api/dictation/warmup` | Bearer | 提前加载现有 CUDA 模型；无音频请求体 |
+| `POST /api/dictation/warmup` | Bearer | 选择并预热 `vad` CUDA 模型；无音频请求体 |
 | `POST /api/dictation/prepare` | Bearer | JSON `mode` 选择并预热 `vad` / `qwen-stream` / `r2t2` |
+| `POST /api/dictation/unload` | Bearer | 立即释放本服务模型；忙碌时返回 429，不排队等待 |
+| `POST /api/dictation/policy` | Bearer | JSON `auto_unload` 布尔值；启用 120 秒空闲卸载或保持常驻 |
 | `WS /api/dictation/stream` | Bearer | 持续 PCM 输入与累计稳定文本、候选字幕 |
 | `POST /api/dictation/transcribe` | Bearer | multipart 的 `file` 字段上传 WAV |
 
 令牌由 `./bin/oneaxe-voice init` 创建，重复执行不会覆盖现有令牌。客户端从 `runtime/client.token` 读取，不需要复制到命令行。
 
-预热成功返回 `{"model_loaded": true, "device": "cuda:0"}`；与转写使用同一模型和互斥锁，忙碌时返回 429，GPU 不可用时返回 503。桌面持续听写在 F8 开始时发起预热，采集同时进行。
+预热成功返回 `{"model_loaded": true, "device": "cuda:0"}`；与转写使用同一模型和互斥锁，忙碌时返回 429，GPU 不可用时返回 503。桌面启动和点击模式时发起预热，F8 仍会确保模型就绪，采集同时进行。
 
 示例 Python 客户端：
 
@@ -93,9 +95,19 @@ with httpx.Client(
 
 PID 和耗时随运行变化。`total` 为服务端开始处理至推理完成的时间，不包含客户端上传和响应传输。`peak_allocated_mib` 是 PyTorch 分配峰值，不是 nvidia-smi 显示的进程总量。数字静音返回 `text: ""`、`inference_performed: false`、`skipped_reason: "digital_silence"`、`device: null`，只包含总耗时。
 
-状态的 `state` 为 `unloaded`、`loading`、`transcribing` 或 `ready`；`busy` 表示本次处理占用锁。`model_loaded` 与 `device` 表示当前模型状态。GPU 名称及上次峰值可能在卸载后保留，不能据此判断模型仍驻留。
+### 模型状态与策略
+
+状态的 `state` 为 `unloaded`、`loading`、`transcribing`、`ready`、`unloading` 或 `error`；`busy` 表示引擎互斥锁被占用。稳听（`vad`）推理显示 `transcribing`；流式会话中 `state` 仍可为 `ready`，且整轮 `busy=true`，是否忙碌应检查 `busy`。`mode` 是服务当前选择的引擎，`model_loaded` 与 `device` 表示当前模型状态。GPU 名称及上次峰值可能在卸载后保留，不能据此判断模型仍驻留。
 
 `allocated_mib` 和 `reserved_mib` 在推理完成或卸载时采样，分别表示 PyTorch 活跃分配和分配器保留量；加载和推理进行中，它们仍可能是上一次采样值。两者不包含 CUDA 上下文等额外占用，进程总量需用 `nvidia-smi` 核对。
+
+`auto_unload` 与 `idle_seconds` 显示当前策略。`POST /api/dictation/policy` 接受 `{"auto_unload": true}` 启用 120 秒空闲卸载，或 `{"auto_unload": false}` 保持常驻；字段只接受 JSON 布尔值。策略原子保存到权限为 `0600` 的 `runtime/model-policy.json`，重启 API 后恢复，优先于 `ONEAXE_VOICE_IDLE_SECONDS`。切换策略不重启或主动加载模型，可以在录音中操作。
+
+空闲计时从最近一次预热、转写完成或流式会话结束后开始，检查周期为 5 秒。状态查询不刷新计时，也不触发加载。流式会话整轮持锁，录音中的长静音不会触发卸载；稳听在两次片段请求之间的长静音期间可能卸载，下段识别会重新加载。
+
+`POST /api/dictation/unload` 在已有加载、推理或流式会话时返回 429，重复卸载空模型仍成功。手动卸载后，桌面轮询不会重新加载；点击模式、立即加载、F8 或新的 API 预热/识别请求可重新加载。`prepare`、`unload` 和 `policy` 成功时都返回当前模型状态。所有接口都仅操作本服务的实例。
+
+### HTTP 错误
 
 | HTTP 状态 | 含义与处理 |
 | --- | --- |
@@ -103,7 +115,7 @@ PID 和耗时随运行变化。`total` 为服务端开始处理至推理完成�
 | `401` | 缺少或错误的本机令牌 |
 | `403` | 客户端不是 loopback 地址 |
 | `413` | 文件或请求体超过限制 |
-| `422` | WAV 无效、规格不支持或缺少 `file` |
+| `422` | WAV 无效、规格不支持、缺少 `file`、模式无效或 `auto_unload` 不是布尔值 |
 | `429` | 已有请求在处理；`Retry-After: 2`，等待后重试 |
 | `503` | CUDA、本地模型目录或显存预算不可用；检查 status 和日志 |
 | `500` | 其他识别故障；检查服务日志 |
@@ -120,7 +132,7 @@ PID 和耗时随运行变化。`total` 为服务端开始处理至推理完成�
 6. 空闲静音期间每 10 秒发送文本 `keepalive`，返回 `{"type":"keepalive"}`，不调用模型、不增加 sequence。超过 30 秒没有应用消息会关闭会话。
 7. 发送文本 `finish` 获取 `final` 并结束本轮；紧接 `flush` 且没有新音频时不会重复生成。发送 `cancel` 或断开取消会话，已开始的 GPU 操作完成后回收实例。
 
-流式整轮占用引擎，其间预热、切换、WAV 识别返回忙碌，不抢占录音。音频总量最多 60 分钟。最终文字前缀冲突时报错并保留已提交结果；不会回删目标应用内容。WS `error.detail` 为故障说明。
+同时只允许一个活跃流式会话。流式整轮占用引擎，其间预热、切换、卸载、WAV 识别和第二个流式会话返回忙碌，不抢占录音；状态查询和策略修改仍可使用。音频总量最多 60 分钟。最终文字前缀冲突时报错并保留已提交结果；不会回删目标应用内容。WS `error.detail` 为故障说明。
 
 桌面私有 socket 的 `ui` 操作另提供 `pending_text`（候选）、`fixed_text`（模型已固定）、`committed_text`（已成功执行发送或复制操作）和 `queued_text`（固定但尚未发送的精确差量），各截取末 600 字。`delivery_state` 为 `idle`、`queued`、`pasted` 或 `copied`；菜单暂停期间只更新固定文字，不提前宣称已发送。`pasted` 说明已发出粘贴按键，不能据此保证任意目标应用已接收。公开状态不含上述正文。
 
@@ -163,6 +175,6 @@ cd ~/tools/oneaxe-voice
 | `ONEAXE_VOICE_STREAM_PYTHON` | 项目下 `.venv-stream/bin/python` | 独立流式解释器 |
 | `ONEAXE_VOICE_CUDA_DEVICE` | `0` | CUDA 设备索引 |
 | `ONEAXE_VOICE_MEMORY_FRACTION` | `0.25` | PyTorch 分配器显存比例上限 |
-| `ONEAXE_VOICE_IDLE_SECONDS` | `120` | 空闲卸载阈值，`0` 表示禁用 |
+| `ONEAXE_VOICE_IDLE_SECONDS` | `0` | 未保存菜单策略时的初始空闲阈值；`0` 表示常驻，保存的策略优先 |
 
 改变 runtime 目录时，服务和客户端必须使用相同配置，并在目标目录初始化令牌。服务预设 `HF_HUB_OFFLINE=1`、`TRANSFORMERS_OFFLINE=1`；本地 HTTP 客户端忽略代理环境变量。

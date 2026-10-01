@@ -33,8 +33,8 @@ def main():
         listener.bind(('127.0.0.1',0));port=listener.getsockname()[1]
     env=dict(os.environ,DISPLAY=args.display,XDG_SESSION_TYPE='x11',ONEAXE_VOICE_RUNTIME_DIR=str(runtime),
              ONEAXE_VOICE_API_URL=f'http://127.0.0.1:{port}',XDG_CONFIG_HOME=str(runtime/'config'),
-             PYTHONPATH=str(root),ONEAXE_VOICE_IDLE_SECONDS='300')
-    (runtime/'desktop.json').write_text(json.dumps({'mode':'vad','source':None}))
+             PYTHONPATH=str(root),ONEAXE_VOICE_IDLE_SECONDS='0')
+    (runtime/'desktop.json').write_text(json.dumps({'mode':'vad' if args.mode=='all' else args.mode,'source':None}))
     procs=[];logs=[]
     def start(name,arguments):
         log=(runtime/(name+'.log')).open('w');logs.append(log)

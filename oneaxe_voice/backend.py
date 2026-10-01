@@ -131,7 +131,7 @@ class QwenEngine:
                 LOGGER.warning("cuBLAS workspace cleanup unavailable; GPU cache may remain")
             self._torch.cuda.empty_cache()
             self._update(**self._memory_snapshot())
-        self._update(state="unloaded", model_loaded=False, device=None)
+        self._update(state="unloaded", model_loaded=False, device=None, last_error=None)
         LOGGER.info("model_unloaded pid=%s", os.getpid())
 
     def _memory_snapshot(self) -> dict[str, float]:
@@ -151,7 +151,11 @@ class QwenEngine:
                 self.settings.idle_seconds > 0
                 and time.monotonic() - self._last_used >= self.settings.idle_seconds
             )
-            if self._model is None or not (force or expired):
+            if self._model is None:
+                if force:
+                    self._update(state="unloaded", last_error=None)
+                return False
+            if not (force or expired):
                 return False
             self._release()
             return True

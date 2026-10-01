@@ -17,7 +17,7 @@ class Settings:
     max_audio_bytes: int = 12 * 1024 * 1024
     max_audio_seconds: float = 60.0
     memory_fraction: float = 0.25
-    idle_seconds: float = 120.0
+    idle_seconds: float = 0.0
     cuda_device: int = 0
     max_new_tokens: int = 512
     api_url: str = "http://127.0.0.1:8097"
@@ -39,7 +39,7 @@ class Settings:
             model_dir=Path(os.getenv("ONEAXE_VOICE_MODEL_DIR", str(DEFAULT_MODEL_DIR))).expanduser(),
             runtime_dir=Path(os.getenv("ONEAXE_VOICE_RUNTIME_DIR", str(cls.runtime_dir))),
             memory_fraction=float(os.getenv("ONEAXE_VOICE_MEMORY_FRACTION", "0.25")),
-            idle_seconds=float(os.getenv("ONEAXE_VOICE_IDLE_SECONDS", "120")),
+            idle_seconds=float(os.getenv("ONEAXE_VOICE_IDLE_SECONDS", "0")),
             cuda_device=int(os.getenv("ONEAXE_VOICE_CUDA_DEVICE", "0")),
             api_url=os.getenv("ONEAXE_VOICE_API_URL", "http://127.0.0.1:8097"),
         )

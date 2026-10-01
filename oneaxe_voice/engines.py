@@ -8,6 +8,7 @@ from pathlib import Path
 import signal
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 
@@ -95,17 +96,55 @@ class EngineRouter:
         self.active_stream = None
         self.last_used = time.monotonic()
         self.loading = False
+        self.unloading = False
         self.error = None
+        self._policy_lock = threading.Lock()
+        self._policy_path = settings.runtime_dir / "model-policy.json"
+        self.idle_seconds = settings.idle_seconds
+        if self._policy_path.exists():
+            policy = json.loads(self._policy_path.read_text(encoding="utf-8"))
+            if type(policy) is not dict or type(policy.get("auto_unload")) is not bool:
+                raise ValueError("模型空闲策略文件无效")
+            self.idle_seconds = 120.0 if policy["auto_unload"] else 0.0
 
     def status(self):
-        value = self.offline.status() if self.mode == "vad" else {
-            "state": "loading" if self.loading else "ready" if self.worker else "unloaded",
-            "model_loaded": self.worker is not None,
-            "device": f"cuda:{self.settings.cuda_device}" if self.worker else None,
-            "model": "Qwen3-ASR-1.7B" if self.mode == "qwen-stream" else "Confucius4-R2T2",
+        mode, worker = self.mode, self.worker
+        value = self.offline.status() if mode == "vad" else {
+            "model_loaded": worker is not None,
+            "device": f"cuda:{self.settings.cuda_device}" if worker else None,
+            "model": "Qwen3-ASR-1.7B" if mode == "qwen-stream" else "Confucius4-R2T2",
         }
-        return {**value, "mode": self.mode, "busy": self.gate.locked(),
-                "last_error": self.error, "worker_pid": self.worker.process.pid if self.worker else None}
+        with self._policy_lock:
+            idle_seconds = self.idle_seconds
+        state = ("unloading" if self.unloading else
+                 "loading" if self.loading or value.get("state") == "loading" else
+                 "transcribing" if value.get("state") == "transcribing" else
+                 "error" if (self.error or value.get("last_error")) and not value.get("model_loaded") else
+                 "ready" if value.get("model_loaded") else "unloaded")
+        return {**value, "state": state, "mode": mode, "busy": self.gate.locked(),
+                "last_error": self.error or value.get("last_error"),
+                "worker_pid": worker.process.pid if worker and worker.process else None,
+                "auto_unload": idle_seconds > 0, "idle_seconds": idle_seconds,
+                "idle_unload_seconds": idle_seconds}
+
+    def set_auto_unload(self, enabled: bool):
+        if type(enabled) is not bool:
+            raise ValueError("auto_unload 必须是布尔值")
+        with self._policy_lock:
+            self.settings.runtime_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            fd, name = tempfile.mkstemp(prefix=".model-policy-", dir=self.settings.runtime_dir)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as output:
+                    os.fchmod(output.fileno(), 0o600)
+                    json.dump({"auto_unload": enabled}, output)
+                    output.flush()
+                    os.fsync(output.fileno())
+                os.replace(name, self._policy_path)
+            finally:
+                if os.path.exists(name):
+                    os.unlink(name)
+            self.idle_seconds = 120.0 if enabled else 0.0
+        return self.status()
 
     def _acquire(self):
         if not self.gate.acquire(blocking=False):
@@ -113,14 +152,14 @@ class EngineRouter:
 
     def _select(self, mode):
         validate_mode(mode)
-        if mode != self.mode:
-            self.offline.unload_if_idle(force=True)
-            if self.worker:
-                self.worker.close()
-                self.worker = None
-            self.mode = mode
         self.loading, self.error = True, None
         try:
+            if mode != self.mode:
+                self.offline.unload_if_idle(force=True)
+                if self.worker:
+                    self.worker.close()
+                    self.worker = None
+                self.mode = mode
             if mode == "vad":
                 self.offline.warmup()
             elif self.worker is None:
@@ -197,12 +236,41 @@ class EngineRouter:
         if not self.gate.acquire(blocking=False):
             return False
         try:
-            self.offline.unload_if_idle(force=force)
-            if self.worker and (force or self.settings.idle_seconds > 0 and
-                                time.monotonic() - self.last_used >= self.settings.idle_seconds):
-                self.worker.close()
-                self.worker = None
-                return True
-            return False
+            with self._policy_lock:
+                idle_seconds = self.idle_seconds
+            if not force and not (idle_seconds > 0 and
+                                  time.monotonic() - self.last_used >= idle_seconds):
+                return False
+            if not (self.worker or self.offline.status().get("model_loaded")):
+                return False
+            self.unloading = True
+            try:
+                released = self.offline.unload_if_idle(force=True)
+                if self.worker:
+                    self.worker.close()
+                    self.worker = None
+                    released = True
+                return released
+            finally:
+                self.unloading = False
         finally:
             self.gate.release()
+
+    def unload(self):
+        if self.gate.locked():
+            raise BusyError("听写引擎正在使用，请等待本轮结束")
+        if not self.gate.acquire(blocking=False):
+            raise BusyError("听写引擎正在使用，请等待本轮结束")
+        try:
+            self.unloading = True
+            try:
+                self.offline.unload_if_idle(force=True)
+                if self.worker:
+                    self.worker.close()
+                    self.worker = None
+                self.error = None
+            finally:
+                self.unloading = False
+        finally:
+            self.gate.release()
+        return self.status()
