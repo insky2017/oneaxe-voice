@@ -1,6 +1,8 @@
 # OneAxe Voice Lab
 
-独立调试 APK，包名 `com.oneaxe.pocket.voicelab`。目标仍是“选中输入框 → 小悬浮按钮开始/结束 → 原输入框得到文字”，不自动回车或发送。所有接入工作先读 [OneAxe Voice 入口](/home/sky/docs/oneaxe-voice/README.md)。
+独立语音 APK，当前用于调试，包名 `com.oneaxe.pocket.voicelab`。目标仍是“选中输入框 → 小悬浮按钮开始/结束 → 原输入框得到文字”，不自动回车或发送。所有接入工作先读 [OneAxe Voice 入口](/home/sky/docs/oneaxe-voice/README.md)。
+
+用户已明确要求与 OneAxe Pocket 网络 App 长期保持独立：分别安装、更新和调试，不合并。Voice Lab 使用用户已建立的 Tailnet 网络，自身不启动或管理 VPN。
 
 ## 当前状态（2026-10-02）
 
