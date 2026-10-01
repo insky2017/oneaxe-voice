@@ -335,3 +335,58 @@ R2T2 使用固定官方源码的 `rollback_punctuation=True`，提交模型已�
 只读查询生产 AppIndicator 的 DBusMenu，确认实际导出的标题为“模型已就绪 · 即听”，模型子菜单包含“立即加载”“立即卸载”“空闲 2 分钟后自动卸载”。没有向用户输入窗口发送测试按键或文字。
 
 VPlus 仍为 PID `7301`，启动时间 `2026-09-30 23:20:01 CST`，健康接口 HTTP 200；代码差异 SHA-256 仍为 `6e831263476ed5a2817831fb03b46c86e84a946cb8fd1c2d4b12fd944bcb5281`。未重启 VPlus，未修改其环境和共享权重。证据为本机 `work/model-lifecycle-deploy-result.json` 与 `work/model-lifecycle-live-menu.json`；旧单元及配置备份保留在本机 `work/model-lifecycle-rollback/`。
+
+
+## 第七阶段：R2T2 两路并发与移动 V1
+
+日期：2026-10-02。基线 `7a84c1e`，开发分支 `codex/mobile-concurrency`，在独立 worktree、runtime、18096 本机 API 和 18097 Tailnet TLS 入口验证。生产听写结束后才开始 GPU 压测；没有重测 tmux、修改 VPlus 或共享权重。
+
+### 源码、协议与 CPU
+
+实现单份 R2T2 权重、会话独立状态与 vLLM AsyncLLM 连续批处理；固定 1 PC + 1 手机，采用 1 GiB KV 和大小 1/2 的 decode CUDA graph。官方普通步/final 适配有 220 步跨三次滚动窗口的差分断言，保留尾垫、稳定前缀及 flush 语义。PC R2T2 切换为独立发送、接收及粘贴；本机管理和移动入口共用一次应用生命周期。
+
+全套 CPU 单元/组件测试 201 项通过，另有真实 GTK 菜单检查通过：手机单独活动时 PC 仍可主动卸载，PC 自己录音时保持禁用。CPU 证据不代替下方 GPU/桌面验证。
+
+集成中先发现一次 TestClient 退出 CancelledError，随后修正了 ASGI 取消清理、启动尚未返回时的迟到租约、终止快照被挤掉、累计音频总时长限制以及 WS 握手 401/403。针对性回归与全套测试均通过。另修正双监听器异常退出时的清理顺序，确保各会话先释放再结束共享模型生命周期，新增故障退出测试通过。签证书助手早期输出处理不兼容；改为私下捕获证书与私钥 PEM 后实际成功，继而验证了仅绑定 CLI/socket 的受限 Docker 签发，配置支持自动续期。
+
+### 两路持续 10 分钟
+
+真实 RTX 4090、vLLM 0.14.0，PC 走 loopback WS，模拟手机客户端走完整 DNS、系统信任校验的 HTTPS/WSS。两个不同的受控测试 WAV 按各自真实时钟循环送入；不等待识别结果才采集下一包。PC 先建立，手机随后建立，两路均完整运行 600 秒。
+
+| 指标 | PC 中文通道 | 手机英文通道 |
+| --- | ---: | ---: |
+| 首次固定文字 | 4.163 秒 | 0.855 秒 |
+| 音频处理积压 p95 / p99 | 0.346 / 0.469 秒 | 0.361 / 0.490 秒 |
+| 单帧处理耗时 p50 / p95 | 130.2 / 171.9 ms | 144.7 / 178.9 ms |
+| 固定文字更新次数 | 870 | 1591 |
+| 发送缓冲峰值 | 1 帧 | 1 帧 |
+| 等待发送额度次数 | 0 | 0 |
+| finish 发出至 final | 0.275 秒 | 0.184 秒 |
+
+两路均通过：后段积压没有持续增长，已固定前缀不回退，包含各自关键词且不含另一端独有关键词，最终 processed 等于 sent。全过程 worker PID 和模型代次保持。首次固定文字受测试语音内容及稳定前缀算法影响，不能当作 GPU 单步耗时或一般口述延迟承诺。
+
+采样 601 次，整卡 GPU 使用率平均 27.36%、p95 37%、峰值 51%；功耗峰值 157.15 W。新推理实例峰值为 worker 386 MiB + EngineCore 6030 MiB，合计约 **6.27 GiB**。整卡显存峰值 15961 MiB 包含旧生产模型、桌面和其他进程，不是两路实例单独占用。未进行 VPlus 同时课程转写的负载实验。
+
+这些数据证明当前两路持续实时，有显存与 GPU 余量；不能把 GPU 百分比按比例换算成更多路。实现已使用连续批处理和 decode graph，本轮不再进行超过两路的容量研究，后续仅在用户明确要求时开展。
+
+再以手机先建立的顺序运行 60 秒，两路继续通过相同验收门槛，证据为 `work/concurrency-mobile-first.json`。
+
+证据：本机忽略文件 `work/concurrency-10min.json`、`work/concurrency-10min.log`。早期 40 秒链路 smoke 保留为 `work/concurrency-smoke.json`，不替代上述最终代码长测。一次在冷启动完成前发起的长测被前置检查拒绝，未发送音频，保留为 `work/concurrency-not-ready-attempt.json`，未算作通过结果。
+
+### 取消、权限和模型生命周期
+
+`tests/e2e_mobile_lifecycle.py` 真实 GPU/WS 验证通过。手机 cancel、强制断线、finish、吊销四种情况下，原 PC 会话继续处理新送入音频并增加固定文字，worker 与代次不变。手机凭据访问本机管理、设备管理、旧 HTTP/WS 以及 PC V1 路径的 12 项拒绝检查通过。
+
+PC 停止后，手机单独活动时执行一次明确卸载，手机收到 `MODEL_NOT_READY`、`complete=false`，保留已固定文字。一次重新加载后模型代次变化，旧代次建立请求返回 `MODEL_CHANGED`。实际服务重启也使用不同服务实例标识。没有通过手机请求隐式加载模型。
+
+证据：`work/mobile-lifecycle-e2e.json`。额外在两路占用时发起第二个手机会话，收到 `CAPACITY_EXCEEDED` 与 close 1013，证据为 `work/capacity-e2e.json`。未认证 HTTPS 能力查询为 401，正确设备凭据查询为 200，Tailnet 管理路径为 403；未关闭证书校验。
+
+### 独立 X11 桌面回归
+
+真实私有 Xvfb、DBus、PulseAudio 测试源与已预热 GPU API，运行 `tests/run_isolated_e2e.py --mode r2t2 --pause-check --safety`，最终退出码 0。通过 F8 开始/结束、34 秒长停顿后继续听写、两份受控中文样本、输入框与保存全文严格一致、字幕位置及拖动、真实菜单暂停/恢复、录音中切换模式下轮生效、切窗口仅复制和取消后不再粘贴。发送队列没有积压；结束后同一 worker 和模型代次保持就绪、无活动会话。
+
+本次首个实际输入为 5.611 秒（含样本开头静音和稳定前缀等待），F8 结束到收尾完成为 0.730 秒。首轮失败源于测试辅助程序按 PID 选择了错误的 DBus 连接：同一托盘进程有多个连接，并非都导出菜单。修正为先探测 `com.canonical.dbusmenu` 再缓存正确连接，未扩大菜单调用超时；CPU 复现与真实 X11 重跑通过。
+
+最终证据为本机忽略文件 `work/concurrent-desktop-e2e-fixed.log`、`work/concurrent-desktop-e2e.json`、`work/concurrent-desktop-controls-e2e.json`；首轮失败日志保留。未向用户实际输入窗口注入测试文字，也未重测 tmux。
+
+Android 真机跨网络录音和目标输入框填入由 Pocket 接入后单独验收，不把本机双身份客户端算作手机 App 已接入。

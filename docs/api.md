@@ -1,5 +1,7 @@
 # 接口与运行说明
 
+本页主要说明本机管理与旧协议。R2T2 桌面已使用双向 V1：`WS /api/dictation/v1/stream`，仍需本机 PC Bearer；其 `start` 为 `{"type":"start","protocol_version":1,"mode":"r2t2","audio":{"encoding":"pcm_s16le","sample_rate":16000,"channels":1}}`。移动 V1 的身份绑定、额度、事件和错误规则见 [移动接口 V1](mobile-api-v1.md)，PC V1 复用这些流式规则，不需要 `expected_*` 字段。凭据与 Tailnet TLS 入口见 [部署文档](mobile-deployment.md)。
+
 ## 当前运行方式
 
 以下命令以仓库位于 `~/tools/oneaxe-voice` 为例；仓库可以放在其他目录，包括带空格的路径。服务监听地址为 `http://127.0.0.1:8097`。文中的已运行状态和性能测量来自旧机器，仅作历史记录。
@@ -46,7 +48,7 @@ ffmpeg -nostdin -i /absolute/path/input.m4a -t 60 -ac 1 -ar 16000 -c:a pcm_s16le
 
 令牌由 `./bin/oneaxe-voice init` 创建，重复执行不会覆盖现有令牌。客户端从 `runtime/client.token` 读取，不需要复制到命令行。
 
-预热成功返回 `{"model_loaded": true, "device": "cuda:0"}`；与转写使用同一模型和互斥锁，忙碌时返回 429，GPU 不可用时返回 503。桌面启动和点击模式时发起预热，F8 仍会确保模型就绪，采集同时进行。
+预热成功返回 `{"model_loaded": true, "device": "cuda:0"}` 及完整状态；PC 占用时返回 429，GPU 不可用时返回 503。桌面启动和点击模式时发起预热；R2T2 的 F8 会等模型和 V1 会话 ready 后才开始采集，避免把整段冷启动音频堆入有限缓冲。
 
 示例 Python 客户端：
 
@@ -97,7 +99,7 @@ PID 和耗时随运行变化。`total` 为服务端开始处理至推理完成�
 
 ### 模型状态与策略
 
-状态的 `state` 为 `unloaded`、`loading`、`transcribing`、`ready`、`unloading` 或 `error`；`busy` 表示引擎互斥锁被占用。稳听（`vad`）推理显示 `transcribing`；流式会话中 `state` 仍可为 `ready`，且整轮 `busy=true`，是否忙碌应检查 `busy`。`mode` 是服务当前选择的引擎，`model_loaded` 与 `device` 表示当前模型状态。GPU 名称及上次峰值可能在卸载后保留，不能据此判断模型仍驻留。
+状态的 `state` 为 `unloaded`、`loading`、`transcribing`、`ready`、`unloading` 或 `error`；`busy` 表示任一会话或本机管理操作占用，`pc_busy` 表示 PC 的管理保护。手机单独活动时 `busy=true, pc_busy=false`，PC 可主动切换/卸载并结束手机。稳听（`vad`）推理显示 `transcribing`；流式会话中 `state` 仍可为 `ready`。`mode`、`model_loaded` 与 `device` 表示实际模型；`server_instance_id`、`model_generation` 绑定服务启动与模型加载代次。GPU 名称及上次峰值可能在卸载后保留，不能据此判断仍驻留。
 
 `allocated_mib` 和 `reserved_mib` 在推理完成或卸载时采样，分别表示 PyTorch 活跃分配和分配器保留量；加载和推理进行中，它们仍可能是上一次采样值。两者不包含 CUDA 上下文等额外占用，进程总量需用 `nvidia-smi` 核对。
 
@@ -130,9 +132,9 @@ PID 和耗时随运行变化。`total` 为服务端开始处理至推理完成�
 4. `partial` 返回整轮累计冻结 `text`、尚未冻结的后缀 `pending`、最近 600 字的 `preview`（冻结前文与候选后缀组合）、递增 `sequence`、`device`、`audio_seconds`、`window_seconds` 和 `inference_ms`。只按 `text` 差量输入；`pending` 不可直接粘贴。
 5. 停顿时发送文本 `flush`：调用官方结束接口补尾，返回 `partial`，保留整轮文字和模型实例，重建本句流式状态。后续音频作为下一句继续处理。`audio_seconds` 仅统计实际发送的 PCM，桌面的录音时长另包含被过滤的空闲静音。
 6. 空闲静音期间每 10 秒发送文本 `keepalive`，返回 `{"type":"keepalive"}`，不调用模型、不增加 sequence。超过 30 秒没有应用消息会关闭会话。
-7. 发送文本 `finish` 获取 `final` 并结束本轮；紧接 `flush` 且没有新音频时不会重复生成。发送 `cancel` 或断开取消会话，已开始的 GPU 操作完成后回收实例。
+7. 发送文本 `finish` 获取 `final` 并结束本轮；紧接 `flush` 且没有新音频时不会重复生成。发送 `cancel` 或断开只取消本会话；R2T2 可中止本路在途模型请求，不关闭共享模型。
 
-同时只允许一个活跃流式会话。流式整轮占用引擎，其间预热、切换、卸载、WAV 识别和第二个流式会话返回忙碌，不抢占录音；状态查询和策略修改仍可使用。音频总量最多 60 分钟。最终文字前缀冲突时报错并保留已提交结果；不会回删目标应用内容。WS `error.detail` 为故障说明。
+本机只允许一个 PC 流式会话，R2T2 可另接一个独立的移动 V1 会话。PC 录音整轮受到保护，其间切换、卸载、WAV 识别和第二个 PC 会话返回忙碌；状态查询和策略修改仍可使用。正常结束、取消和断线只清理本路状态，保留共享模型。音频总量最多 60 分钟。固定文字前缀冲突时报错并保留已提交结果；不会回删目标应用内容。旧 WS 的 `error.detail` 为故障说明，新 V1 使用稳定 `code` 与 `message`。
 
 桌面私有 socket 的 `ui` 操作另提供 `pending_text`（候选）、`fixed_text`（模型已固定）、`committed_text`（已成功执行发送或复制操作）和 `queued_text`（固定但尚未发送的精确差量），各截取末 600 字。`delivery_state` 为 `idle`、`queued`、`pasted` 或 `copied`；菜单暂停期间只更新固定文字，不提前宣称已发送。`pasted` 说明已发出粘贴按键，不能据此保证任意目标应用已接收。公开状态不含上述正文。
 

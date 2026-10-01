@@ -101,6 +101,10 @@ def main():
         check({**base, "preparing": True, "model_unloading": True, "model_status": ready},
               False, False, "卸载中")
         check({**base, "model_status": {**ready, "busy": True}}, False, False, "已就绪")
+        check({**base, "model_status": {**ready, "busy": True, "pc_busy": False}},
+              False, True, "已就绪")
+        check({**base, "model_status": {**ready, "busy": True, "pc_busy": True}},
+              False, False, "已就绪")
         check({**base, "model_status": {**ready, "state": "transcribing"}}, False, False, "识别中")
         check({**base, "selected_mode": "r2t2", "model_status": ready}, True, True, "已就绪")
         tray.update_model_menu({**base, "model_status": {**ready, "last_error": "model failed"}})

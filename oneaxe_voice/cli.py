@@ -55,6 +55,17 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("cancel", help="取消本次桌面听写")
     commands.add_parser("desktop-status", help="查看录音、识别和粘贴状态")
     commands.add_parser("desktop-run", help="运行桌面录音控制服务")
+    device = commands.add_parser("device", help="本机签发、轮换或吊销手机凭据")
+    device_commands = device.add_subparsers(dest="device_action", required=True)
+    issue = device_commands.add_parser("issue", help="签发设备凭据，仅本次显示令牌")
+    issue.add_argument("name")
+    issue.add_argument("--token-file", type=Path, help="将令牌写入新建的 0600 文件，标准输出只含元数据")
+    device_commands.add_parser("list", help="列出设备元数据，不显示令牌")
+    for action in ("revoke", "rotate"):
+        item = device_commands.add_parser(action, help="吊销凭据" if action == "revoke" else "轮换并仅本次显示令牌")
+        item.add_argument("credential_id")
+        if action == "rotate":
+            item.add_argument("--token-file", type=Path, help="将新令牌写入新建的 0600 文件")
     mode = commands.add_parser("set-mode", help="选择稳听 / 随听 / 即听；录音中下轮生效")
     mode.add_argument("mode", choices=["vad", "qwen-stream", "r2t2"])
     setup = commands.add_parser("desktop-setup", help="安装 GNOME 桌面服务与全局快捷键")
@@ -65,6 +76,8 @@ def main(argv: list[str] | None = None) -> int:
     transcribe.add_argument("--json", action="store_true", help="输出完整结果和耗时")
     transcribe.add_argument("--output", type=Path, help="把识别文字保存为 UTF-8 文件")
     args = parser.parse_args(argv)
+    token_output = None
+    token_written = False
     try:
         settings = Settings.from_env()
         if args.command == "init":
@@ -100,11 +113,24 @@ def main(argv: list[str] | None = None) -> int:
         headers = {}
         if args.command != "health":
             headers["Authorization"] = "Bearer " + settings.token_path.read_text().strip()
+        token_path = getattr(args, "token_file", None)
+        if token_path is not None:
+            descriptor = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            token_output = os.fdopen(descriptor, "w", encoding="ascii")
         with httpx.Client(
             base_url=url, headers=headers, trust_env=False, timeout=180,
             follow_redirects=False,
         ) as client:
-            if args.command == "transcribe":
+            if args.command == "device":
+                if args.device_action == "list":
+                    response = client.get("/api/devices")
+                elif args.device_action == "issue":
+                    response = client.post("/api/devices", json={"name": args.name})
+                else:
+                    from uuid import UUID
+                    credential_id = str(UUID(args.credential_id))
+                    response = client.post(f"/api/devices/{credential_id}/{args.device_action}")
+            elif args.command == "transcribe":
                 if args.audio.stat().st_size > settings.max_audio_bytes:
                     raise ValueError("音频文件超过 12 MiB")
                 with args.audio.open("rb") as recording:
@@ -118,6 +144,15 @@ def main(argv: list[str] | None = None) -> int:
         payload = response.json()
         if response.is_error:
             raise ValueError(f"HTTP {response.status_code}: {payload.get('detail', '请求失败')}")
+        if token_output is not None:
+            token = payload.pop("token", None)
+            if not isinstance(token, str) or len(token) < 32:
+                raise ValueError("服务未返回有效的新设备令牌")
+            token_output.write(token + "\n")
+            token_output.flush()
+            os.fsync(token_output.fileno())
+            token_written = True
+            payload["token_file"] = str(token_path)
         if args.command == "transcribe":
             if args.output:
                 args.output.write_text(payload["text"] + "\n", encoding="utf-8")
@@ -136,6 +171,11 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError, httpx.HTTPError, subprocess.SubprocessError) as exc:
         print(f"OneAxe Voice: {exc}", file=sys.stderr)
         return 2
+    finally:
+        if token_output is not None:
+            token_output.close()
+            if not token_written:
+                token_path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

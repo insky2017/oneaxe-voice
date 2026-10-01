@@ -217,7 +217,7 @@ class Tray:
         loaded_mode = model.get("mode")
         ready = model_state in {"ready", "transcribing"} and model.get("model_loaded") and loaded_mode == selected
         active = state.get("state", "idle") not in {"idle", "error", "stopped"}
-        busy = (active or model.get("busy") or state.get("preparing") or
+        busy = (active or model.get("pc_busy", model.get("busy")) or state.get("preparing") or
                 state.get("model_unloading") or model_state == "transcribing")
         transitioning = model_state in {"loading", "unloading"}
         connected = connected and model_state != "unavailable"

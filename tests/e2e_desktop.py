@@ -15,14 +15,19 @@ import threading
 import time
 import wave
 
+import httpx
+
 from oneaxe_voice.config import ROOT, Settings
 from oneaxe_voice.desktop import control
 from oneaxe_voice.modes import MODES
 from oneaxe_voice.paste import current_target
 
+MENU_OWNERS = {}
+
 
 def run(*args, **kwargs):
-    return subprocess.run(args, check=True, capture_output=True, text=True, timeout=10, **kwargs).stdout.strip()
+    kwargs.setdefault('timeout',10)
+    return subprocess.run(args, check=True, capture_output=True, text=True, **kwargs).stdout.strip()
 
 
 def wait_for(predicate, seconds=10):
@@ -50,32 +55,125 @@ def verify_pause(settings,status,state_file,mode,expected_count):
 
 def menu_select(mode):
     # Use the same exported DBusMenu Event protocol as Ubuntu AppIndicator.
+    menu='/org/ayatana/NotificationItem/oneaxe_voice/Menu'
     if os.getenv('ONEAXE_TEST_TRAY_PID'):
-        names=run('gdbus','call','--session','--dest','org.freedesktop.DBus',
-                  '--object-path','/org/freedesktop/DBus','--method','org.freedesktop.DBus.ListNames')
-        owner=None
-        for name in re.findall(r"'(:[0-9.]+)'",names):
-            try:
-                pid=run('gdbus','call','--session','--dest','org.freedesktop.DBus',
-                        '--object-path','/org/freedesktop/DBus',
-                        '--method','org.freedesktop.DBus.GetConnectionUnixProcessID',name)
-            except subprocess.CalledProcessError:
-                continue
-            if re.search(r'uint32 '+os.environ['ONEAXE_TEST_TRAY_PID']+r'\b',pid):
-                owner=name;break
-        assert owner,'test tray did not register on private DBus'
+        tray_pid=os.environ['ONEAXE_TEST_TRAY_PID']
+        owner=MENU_OWNERS.get(tray_pid)
+        if owner is None:
+            names=run('gdbus','call','--session','--dest','org.freedesktop.DBus',
+                      '--object-path','/org/freedesktop/DBus','--method','org.freedesktop.DBus.ListNames')
+            for name in re.findall(r"'(:[0-9.]+)'",names):
+                try:
+                    pid=run('gdbus','call','--session','--dest','org.freedesktop.DBus',
+                            '--object-path','/org/freedesktop/DBus',
+                            '--method','org.freedesktop.DBus.GetConnectionUnixProcessID',name)
+                    if not re.search(r'uint32 '+tray_pid+r'\b',pid):continue
+                    # AppIndicator has multiple bus connections in one process;
+                    # only its serviced menu connection can handle these calls.
+                    interfaces=run('gdbus','call','--session','--dest',name,'--object-path',menu,
+                                   '--method','org.freedesktop.DBus.Introspectable.Introspect',timeout=2)
+                    if 'com.canonical.dbusmenu' in interfaces:
+                        owner=name;MENU_OWNERS[tray_pid]=name;break
+                except (subprocess.CalledProcessError,subprocess.TimeoutExpired):
+                    continue
+            assert owner,'test tray did not export a responsive DBusMenu connection'
     else:
         listed=run('gdbus','call','--session','--dest','org.kde.StatusNotifierWatcher',
                    '--object-path','/StatusNotifierWatcher','--method','org.freedesktop.DBus.Properties.Get',
                    'org.kde.StatusNotifierWatcher','RegisteredStatusNotifierItems')
         owner=re.search(r"(:[0-9.]+)@/org/ayatana/NotificationItem/oneaxe_voice",listed).group(1)
-    menu='/org/ayatana/NotificationItem/oneaxe_voice/Menu'
     layout=run('gdbus','call','--session','--dest',owner,'--object-path',menu,
                '--method','com.canonical.dbusmenu.GetLayout','--','0','-1','[]')
     item=re.search(r"\((\d+), \{[^}]*'label': <'"+re.escape(MODES[mode])+r"'>",layout).group(1)
     run('gdbus','call','--session','--dest',owner,'--object-path',menu,
         '--method','com.canonical.dbusmenu.Event',item,'clicked','<0>','0')
     return owner
+
+
+def api_status(settings):
+    with httpx.Client(base_url=settings.api_url,trust_env=False,
+                      headers={'Authorization':'Bearer '+settings.token_path.read_text().strip()}) as client:
+        response=client.get('/api/dictation/status')
+        response.raise_for_status()
+        return response.json()
+
+
+def verify_resident_controls(settings,window,state_file,feed,errors,menu_owner,evidence_dir,abort):
+    """Cancel this PC session while retaining the ready shared R2T2 worker."""
+    menu='/org/ayatana/NotificationItem/oneaxe_voice/Menu'
+    def event(kind):
+        run('gdbus','call','--session','--dest',menu_owner,'--object-path',menu,
+            '--method','com.canonical.dbusmenu.Event','0',kind,'<0>','0')
+    def text():return json.loads(state_file.read_text())['text']
+    baseline=api_status(settings)
+    before=text();other=None;writer=None
+    try:
+        run('xdotool','key','F8')
+        wait_for(lambda:control(settings,'status')['state']=='recording')
+        writer=threading.Thread(target=feed);writer.start()
+        wait_for(lambda:text()!=before,15)
+        event('opened')
+        wait_for(lambda:control(settings,'status')['menu_paused'])
+        time.sleep(.4);paused_text=text()
+        time.sleep(1)
+        assert text()==paused_text,'menu did not pause paste'
+        menu_select('vad')
+        wait_for(lambda:control(settings,'status')['selected_mode']=='vad')
+        assert control(settings,'status')['mode']=='r2t2','mode changed within a recording'
+        assert api_status(settings)['mode']=='r2t2'
+        # Restore the next-round selection before cancellation so this test does
+        # not turn a resident-model check into a model switch on the shared API.
+        menu_select('r2t2')
+        wait_for(lambda:control(settings,'status')['selected_mode']=='r2t2')
+        event('closed')
+        wait_for(lambda:not control(settings,'status')['menu_paused'])
+        wait_for(lambda:text()!=paused_text,12)
+        assert current_target().window==window,'caption/menu stole focus'
+        other_file=evidence_dir/'stream-other-target.json'
+        other=subprocess.Popen([sys.executable,str(ROOT/'tests/input_target.py'),str(other_file)])
+        def other_window():
+            found=subprocess.run(['xdotool','search','--onlyvisible','--class','OneAxeVoiceTest'],
+                                 capture_output=True,text=True,timeout=10)
+            assert other.poll() is None,'second test input target exited early'
+            if found.returncode==1 and not found.stderr.strip():return None
+            found.check_returncode()
+            ids=found.stdout.splitlines()
+            alternate=next((item for item in ids if item!=window),None)
+            if alternate:assert window in ids,'original test input target disappeared'
+            return alternate
+        alternate=wait_for(other_window)
+        run('xdotool','windowactivate','--sync',alternate)
+        wait_for(lambda:control(settings,'status').get('paste_paused'),15)
+        time.sleep(.4)
+        assert json.loads(other_file.read_text())['text']=='','text pasted into changed window'
+        preserved=text()
+        control(settings,'cancel')
+        abort.set();writer.join(3)
+        assert not writer.is_alive() and not errors,errors
+        wait_for(lambda:not api_status(settings)['busy'],15)
+        after=api_status(settings)
+        assert after['model_loaded'] and after['mode']=='r2t2','cancel unloaded the resident model'
+        assert (after['worker_pid'],after['model_generation'])==(baseline['worker_pid'],baseline['model_generation']), 'cancel replaced the resident worker'
+        time.sleep(.5)
+        assert text()==preserved,'new text pasted after cancel'
+        status=control(settings,'status')
+        assert status['state']=='idle' and status['last_action']=='cancelled'
+        assert status['queued_segments']==0 and not status['capture_active']
+        assert json.loads(other_file.read_text())['text']==''
+        result={'menu_protocol':'DBusMenu opened/closed/clicked','paste_paused_and_resumed':True,
+                'mode_deferred':True,'caption_kept_focus':True,'changed_window_protected':True,
+                'cancel_stopped_paste':True,'resident_model_preserved':True,'resident_worker_preserved':True,
+                'worker_pid':after['worker_pid'],'model_generation':after['model_generation']}
+        (evidence_dir/'stream-controls-e2e.json').write_text(json.dumps(result,indent=2))
+        print(json.dumps(result),flush=True)
+    finally:
+        abort.set()
+        event('closed')
+        control(settings,'cancel')
+        if writer:writer.join(25)
+        assert not errors,errors
+        if other:other.terminate();other.wait(timeout=3)
+        run('xdotool','windowactivate','--sync',window)
 
 
 def main():
@@ -86,10 +184,12 @@ def main():
     parser.add_argument('--safety',action='store_true')
     parser.add_argument('--pause-check',action='store_true')
     args=parser.parse_args()
+    if os.getenv('ONEAXE_TEST_REUSED_API') and args.mode!='r2t2':
+        parser.error('Reusing an API supports only the R2T2 desktop regression')
     if args.pause_check and args.repeats!=2:
         parser.error('--pause-check requires two passes of the known sample')
     settings=Settings.from_env();runtime=settings.runtime_dir
-    evidence_dir=ROOT/'work';evidence_dir.mkdir(exist_ok=True)
+    evidence_dir=Path(os.getenv('ONEAXE_TEST_EVIDENCE_DIR',str(ROOT/'work')));evidence_dir.mkdir(parents=True,exist_ok=True)
     config=runtime/'desktop.json';original=config.read_bytes()
     saved={name:(runtime/name).read_bytes() if (runtime/name).exists() else None for name in ('last-transcript.txt','last-session.json')}
     clipboard=subprocess.run(['xclip','-selection','clipboard','-out'],capture_output=True,timeout=3)
@@ -212,11 +312,8 @@ def main():
                 result.update(pause_seconds=pause_seconds,pause_committed=True,pause_stable=True,
                               caption_geometry=caption_geometry)
             if args.safety and mode=='r2t2':
-                from e2e_controls import verify_controls
-                if args.pause_check:
-                    # The menu/resume test needs new speech within its own wait window.
-                    pcm=sample*3
-                verify_controls(settings,window,test_state,feed,errors,menu_owner,evidence_dir,abort)
+                pcm=sample*3
+                verify_resident_controls(settings,window,test_state,feed,errors,menu_owner,evidence_dir,abort)
             if args.pause_check:
                 from e2e_preview import verify_position_persistence
                 result['position_persisted']=verify_position_persistence(settings,menu_owner,window)

@@ -44,6 +44,12 @@
 服务地址为 http://127.0.0.1:8097。默认使用本地 Qwen3-ASR-1.7B 和 CUDA。
 仅启动 API 时，模型在预热或识别请求到来后加载，同样遵循保存的生命周期策略。
 
+## PC 与手机并发
+
+R2T2 使用一份 GPU 权重和独立会话状态，支持 **1 路 PC + 1 路手机**。手机只能使用 PC 已加载的 R2T2；不能加载、切换或卸载模型。PC 保留模型控制权。手机结束、取消和断线只清理本路，模型继续驻留；两端都空闲后才计算用户已开启的自动卸载时间。
+
+移动端通过 Tailnet 的 HTTPS/WSS 和独立设备凭据接入。入口需要单独配置证书，不因安装代码而自动开放。接入开发以 [移动接口 V1](docs/mobile-api-v1.md) 为准，部署与凭据操作见 [移动入口部署](docs/mobile-deployment.md)。Qwen 两种模式暂不提供移动并发。
+
 ## 文档
 
 - [架构与隔离边界](docs/architecture.md)
@@ -51,6 +57,8 @@
 - [桌面听写说明](docs/desktop.md)
 - [VAD 分段与持续输出](docs/vad.md)
 - [接口与运行说明](docs/api.md)
+- [移动接口 V1](docs/mobile-api-v1.md) · [移动入口部署](docs/mobile-deployment.md)
+- [R2T2 并发研究](docs/concurrency-research-2026-10-02.md)
 - [验证记录](docs/validation.md)
 - [实施计划](docs/plan.md)
 

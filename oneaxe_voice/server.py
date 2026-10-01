@@ -17,7 +17,9 @@ from . import __version__
 from .audio import AudioError
 from .backend import BusyError, GPUError, QwenEngine
 from .config import Settings
+from .device_auth import DeviceCredentialStore, MOBILE_READ, MOBILE_STREAM
 from .engines import EngineRouter
+from .mobile_api import register_v1
 from .modes import validate_mode
 
 LOGGER = logging.getLogger("uvicorn.error")
@@ -26,27 +28,80 @@ LOGGER = logging.getLogger("uvicorn.error")
 class LocalAccess:
     """Authenticate before multipart parsing and bound both sized and streamed bodies."""
 
-    def __init__(self, app, token: str, max_body_bytes: int) -> None:
+    def __init__(self, app, token: str, max_body_bytes: int, credentials) -> None:
         """Wrap the ASGI application with a dedicated local capability."""
         self.app = app
         self.expected = ("Bearer " + token).encode("ascii")
         self.max_body_bytes = max_body_bytes
+        self.credentials = credentials
+
+    @staticmethod
+    def loopback(host):
+        try:
+            return ipaddress.ip_address(host).is_loopback
+        except (ValueError, TypeError):
+            return False
+
+    async def reject(self, scope, receive, send, code, message, status):
+        response = JSONResponse({"code": code, "message": message, "detail": message,
+                                 "retryable": False, "retry_after_ms": None}, status)
+        if (scope["type"] == "websocket" and scope["path"].startswith("/api/mobile/v1/")
+                and "websocket.http.response" in scope.get("extensions", {})):
+            await send({"type": "websocket.http.response.start", "status": status,
+                        "headers": response.raw_headers})
+            await send({"type": "websocket.http.response.body", "body": response.body})
+        elif scope["type"] == "websocket":
+            await send({"type": "websocket.close", "code": 1008})
+        else:
+            await response(scope, receive, send)
 
     async def __call__(self, scope, receive, send) -> None:
         """Enforce the local API boundary without buffering uploaded audio twice."""
-        if scope["type"] != "http" or scope["path"] == "/health":
+        if scope["type"] not in {"http", "websocket"}:
             await self.app(scope, receive, send)
             return
-        try:
-            local = ipaddress.ip_address(scope["client"][0]).is_loopback
-        except (ValueError, TypeError):
-            local = False
-        if not local:
-            await JSONResponse({"detail": "仅允许本机客户端"}, 403)(scope, receive, send)
+        server = scope.get("server") or (None, None)
+        local_surface = self.loopback(server[0]) or server[0] == "testserver"
+        mobile = scope["path"].startswith("/api/mobile/v1/")
+        if not local_surface and not mobile:
+            await self.reject(scope, receive, send, "FORBIDDEN", "此入口仅提供移动 V1 接口", 403)
+            return
+        if scope["type"] == "http" and scope["path"] == "/health":
+            await self.app(scope, receive, send)
             return
         headers = dict(scope["headers"])
-        if not hmac.compare_digest(headers.get(b"authorization", b""), self.expected):
-            await JSONResponse({"detail": "本机访问令牌无效"}, 401)(scope, receive, send)
+        authorization = headers.get(b"authorization", b"")
+        bearer = authorization[7:].decode("latin-1") if authorization.startswith(b"Bearer ") else ""
+        try:
+            if mobile:
+                principal = await asyncio.to_thread(self.credentials.authenticate, bearer)
+                if principal is None:
+                    await self.reject(scope, receive, send, "UNAUTHORIZED", "设备凭据无效", 401)
+                    return
+                required = MOBILE_STREAM if scope["type"] == "websocket" else MOBILE_READ
+                if required not in principal.scopes:
+                    await self.reject(scope, receive, send, "FORBIDDEN", "设备凭据缺少接口权限", 403)
+                    return
+                scope["voice.principal"] = principal
+            else:
+                if await asyncio.to_thread(self.credentials.recognizes, bearer):
+                    await self.reject(scope, receive, send, "FORBIDDEN", "移动凭据不能访问本机接口", 403)
+                    return
+                client = scope.get("client") or (None, None)
+                if not self.loopback(client[0]):
+                    await self.reject(scope, receive, send, "FORBIDDEN", "仅允许本机客户端", 403)
+                    return
+                if not hmac.compare_digest(authorization, self.expected):
+                    await self.reject(scope, receive, send, "UNAUTHORIZED", "本机访问令牌无效", 401)
+                    return
+        except (OSError, ValueError):
+            await self.reject(scope, receive, send, "SERVICE_UNAVAILABLE", "设备凭据存储不可用", 503)
+            return
+        if scope["type"] == "websocket":
+            if b"origin" in headers:
+                await self.reject(scope, receive, send, "FORBIDDEN", "不支持浏览器 WebSocket 接入", 403)
+                return
+            await self.app(scope, receive, send)
             return
         try:
             length = int(headers.get(b"content-length", b"0"))
@@ -73,7 +128,7 @@ class LocalAccess:
         await self.app(scope, bounded_receive, send)
 
 
-def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
+def create_app(settings: Settings | None = None, engine=None, credential_store=None, v1_limits=None) -> FastAPI:
     """Build one application without loading a model or touching VPlus."""
     settings = settings or Settings.from_env()
     token = settings.token_path.read_text().strip()
@@ -82,6 +137,9 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     engine = engine or EngineRouter(settings)
+    credential_store = credential_store or DeviceCredentialStore(settings.runtime_dir / "mobile-devices.json")
+    if hasattr(engine, "set_mobile_credential_validator"):
+        engine.set_mobile_credential_validator(credential_store.is_active)
     pending: set[asyncio.Task] = set()
 
     async def idle_loop() -> None:
@@ -108,8 +166,10 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
         title="OneAxe Voice", version=__version__, lifespan=lifespan,
         docs_url=None, redoc_url=None, openapi_url=None,
     )
-    app.add_middleware(LocalAccess, token=token, max_body_bytes=settings.max_body_bytes)
+    app.add_middleware(LocalAccess, token=token, max_body_bytes=settings.max_body_bytes,
+                       credentials=credential_store)
     app.state.engine = engine
+    app.state.credential_store = credential_store
 
     @app.get("/health")
     async def health():
@@ -137,6 +197,8 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
             # Keep the engine lease until an already dispatched CUDA step ends.
             await asyncio.gather(task, return_exceptions=True)
             raise
+
+    register_v1(app, engine, credential_store, worker_call, v1_limits)
 
     class ModeRequest(BaseModel):
         mode: str

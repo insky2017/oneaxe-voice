@@ -22,6 +22,7 @@ from .capture import CaptureError, pack_recording, pcm_chunks, segment_recording
 from .config import Settings
 from .paste import append_delta, copy_text, current_target, deliver, plain_text
 from .modes import MODES, validate_mode
+from .stream_client import StreamClient, StreamInput
 from .vad import StreamEndpoint
 
 LOGGER = logging.getLogger(__name__)
@@ -102,6 +103,7 @@ class Desktop:
         self.records = []
         self.only_copy = False
         self.session_id = ""
+        self.stream_delivery_open = False
         self.state = {"state": "idle", "last_action": None, "last_error": None,
                       "capture_active": False, "recognizing": False}
 
@@ -194,6 +196,7 @@ class Desktop:
             return self.status()
         if action == "cancel":
             if self.task:
+                self.stream_delivery_open = False
                 if not self.task.cancelling():
                     self.task.cancel()
                 await asyncio.gather(self.task, return_exceptions=True)
@@ -220,6 +223,7 @@ class Desktop:
         self.preview, self.full_text, self.records = "", "", []
         self.pending_text = self.fixed_text = self.committed_text = ""
         self.delivery_state = "idle"
+        self.stream_delivery_open = config["mode"] == "r2t2"
         self.session_id = str(uuid.uuid4())
         self.only_copy = config["clipboard_only"]
         self.started = now
@@ -426,7 +430,12 @@ class Desktop:
                              "mode": self.state["mode"],
                              "received_at_seconds": round(time.monotonic() - self.started, 3)})
         self._save(self.session_id, accumulated, self.records)
+        await self._deliver_text(accumulated, delta, target)
+
+    async def _deliver_text(self, accumulated, delta, target, *, stream=False):
         await self._wait_menu()
+        if stream and not self.stream_delivery_open:
+            return
         payload = accumulated if self.only_copy else delta
         self.delivery_task = asyncio.create_task(asyncio.to_thread(
             deliver, payload, target, self.only_copy,
@@ -448,6 +457,158 @@ class Desktop:
         if action in {"pasted", "copied", "focus_changed"}:
             self.committed_text = accumulated
             self.delivery_state = "pasted" if action == "pasted" else "copied"
+
+    async def _produce_stream_v1(self, source, config, stream, ready):
+        await ready.wait()
+        total = 0
+        endpoint = StreamEndpoint(config["stream_pause_ms"], config["vad_mode"], config["vad_min_dbfs"])
+        try:
+            async with aclosing(pcm_chunks(source, self.stop, config["max_session_seconds"])) as capture:
+                async for chunk in capture:
+                    total += len(chunk)
+                    self.state["audio_seconds"] = round(total / 32000, 2)
+                    for event in endpoint.feed(chunk):
+                        stream.put_nowait(event)
+                    self.state.update(voice_active=endpoint.active, queued_segments=stream.qsize())
+            for event in endpoint.finish():
+                stream.put_nowait(event)
+            stream.put_nowait(None)
+        except asyncio.QueueFull as exc:
+            self.state["stopped_reason"] = "backlog"
+            self.stream_delivery_open = False
+            raise CaptureError("流式音频积压超过 2 秒，已停止本轮；已收到文字保存在本机") from exc
+        finally:
+            self.state.update(capture_active=False, voice_active=False, state="finishing")
+            if not self.stop.is_set() and "stopped_reason" not in self.state:
+                self.state["stopped_reason"] = "session_limit"
+            self.stop.set()
+
+    def _accept_stream_v1(self, event, deliveries):
+        if not self.stream_delivery_open:
+            return
+        self.state.update(recognizing=False, request_id=event.get("request_id", event["session_id"]))
+        for key in ("device", "window_seconds", "inference_ms"):
+            if key in event:
+                self.state[key] = event[key]
+        if event["type"] not in {"partial", "final", "error"}:
+            return
+        raw = event["text"]
+        accumulated = plain_text(raw)
+        if not accumulated.startswith(self.full_text):
+            self.stream_delivery_open = False
+            raise CaptureError("流式结果修改了已输入文字，已停止本轮；全文保存在本机")
+        self.pending_text = event.get("pending", "")
+        self.preview = event.get("preview", raw + self.pending_text)
+        self.fixed_text = accumulated
+        if accumulated != self.full_text:
+            self.state["segments_done"] += 1
+            raw_delta = raw[len(getattr(self, "stream_raw_text", "")):]
+            self.stream_raw_text = raw
+            self.full_text = accumulated
+            self.records.append({
+                "sequence": self.state["segments_done"], "text": raw_delta,
+                "reason": "stop" if event["type"] == "final" else event.get("reason", "stream"),
+                "audio_seconds": event.get("audio_seconds", event.get("audio_processed_samples", 0) / 16000),
+                "request_id": event.get("request_id", event["session_id"]),
+                "mode": self.state["mode"],
+                "received_at_seconds": round(time.monotonic() - self.started, 3),
+            })
+            self._save(self.session_id, accumulated, self.records)
+        if event["type"] == "error":
+            self.stream_delivery_open = False
+            return
+        if accumulated != self.committed_text:
+            self.delivery_state = "queued"
+            # The fixed transcript is cumulative, so one latest snapshot retains
+            # every undelivered suffix without an unbounded delivery queue.
+            if deliveries.full():
+                deliveries.get_nowait()
+                deliveries.task_done()
+            deliveries.put_nowait(accumulated)
+
+    async def _deliver_stream_v1(self, deliveries, target):
+        while True:
+            accumulated = await deliveries.get()
+            try:
+                if accumulated is None:
+                    return
+                await self._wait_menu()
+                if not self.stream_delivery_open:
+                    return
+                if not accumulated.startswith(self.committed_text):
+                    self.stream_delivery_open = False
+                    raise CaptureError("已输入文字与流式结果不一致，已停止自动输入")
+                delta = accumulated[len(self.committed_text):]
+                if delta:
+                    await self._deliver_text(accumulated, delta, target, stream=True)
+                    if self.fixed_text != self.committed_text:
+                        self.delivery_state = "queued"
+            finally:
+                deliveries.task_done()
+
+    async def _consume_stream_v1(self, stream, target, ready):
+        if self.unload_task:
+            await asyncio.shield(self.unload_task)
+        if self.prepare_task:
+            await asyncio.shield(self.prepare_task)
+        deliveries = asyncio.Queue(maxsize=1)
+        self.stream_raw_text = ""
+        self.stream_delivery_open = True
+
+        def started(event):
+            self.model_error = None
+            self.state.update(warming=False, request_id=event.get("request_id", event["session_id"]),
+                              server_instance_id=event["server_instance_id"],
+                              model_generation=event["model_generation"],
+                              stream_session_id=event["session_id"])
+            for key in ("audio_received_samples", "audio_processed_samples", "audio_send_limit"):
+                if key in event:
+                    self.state[key] = event[key]
+            if "device" in event:
+                self.state["device"] = event["device"]
+            ready.set()
+
+        def sent(kind, samples):
+            self.state.update(queued_segments=stream.qsize(), recognizing=kind in {"audio", "flush", "finish"},
+                              audio_sent_samples=samples)
+            if kind == "flush":
+                self.state["pause_flushes"] = self.state.get("pause_flushes", 0) + 1
+
+        def received(event):
+            for key in ("audio_received_samples", "audio_processed_samples", "audio_send_limit"):
+                if key in event:
+                    self.state[key] = event[key]
+            self._accept_stream_v1(event, deliveries)
+
+        def aborted():
+            self.stream_delivery_open = False
+
+        client = StreamClient(self.settings.api_url, self.settings.token_path.read_text().strip(),
+                              on_ready=started, on_event=received, on_sent=sent, on_abort=aborted)
+        network = asyncio.create_task(client.run(stream))
+        delivery = asyncio.create_task(self._deliver_stream_v1(deliveries, target))
+        drain = None
+        try:
+            done, _ = await asyncio.wait([network, delivery], return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                task.result()
+            if delivery in done:
+                raise CaptureError("流式文字交付意外停止")
+            drain = asyncio.create_task(deliveries.join())
+            done, _ = await asyncio.wait([drain, delivery], return_when=asyncio.FIRST_COMPLETED)
+            if delivery in done:
+                delivery.result()
+                raise CaptureError("流式文字交付意外停止")
+            await drain
+            await deliveries.put(None)
+            await delivery
+        finally:
+            self.stream_delivery_open = False
+            tasks = [network, delivery] + ([drain] if drain else [])
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _produce_stream(self, source, config, queue):
         total = 0
@@ -560,6 +721,12 @@ class Desktop:
                     producer = asyncio.create_task(self._produce(source["name"], config, queue))
                     consumer = asyncio.create_task(self._consume(client, warmup, queue, target, config))
                     children = [producer, consumer, warmup]
+                elif config["mode"] == "r2t2":
+                    queue = StreamInput()
+                    ready = asyncio.Event()
+                    producer = asyncio.create_task(self._produce_stream_v1(source["name"], config, queue, ready))
+                    consumer = asyncio.create_task(self._consume_stream_v1(queue, target, ready))
+                    children = [producer, consumer]
                 else:
                     queue = asyncio.Queue(maxsize=400)  # At most 64 s / 2.05 MB PCM, including cold start.
                     producer = asyncio.create_task(self._produce_stream(source["name"], config, queue))

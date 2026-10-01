@@ -1,5 +1,5 @@
-.venv/
-.venv-stream/
+.venv
+.venv-stream
 runtime/
 work/
 __pycache__/

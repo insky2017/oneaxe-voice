@@ -116,7 +116,8 @@ class RouterTests(unittest.TestCase):
             self.router.transcribe(b'wav', 'request')
         self.assertFalse(self.router.unload_if_idle(force=True))
         self.router.end('session', abort=True)
-        self.worker.close.assert_called_once()
+        self.worker.close.assert_not_called()
+        self.worker.call.assert_any_call('cancel', session='session')
         self.assertFalse(self.router.gate.locked())
 
     def test_engine_switch_releases_old_worker_before_loading_next(self):
