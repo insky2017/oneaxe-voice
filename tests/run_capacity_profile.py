@@ -42,6 +42,10 @@ def parse_args(argv=None):
     parser.add_argument('--live-runtime', type=Path, required=True)
     parser.add_argument('--work-dir', type=Path, default=ROOT / 'work/capacity')
     parser.add_argument('--runtime-dir', type=Path, default=ROOT / 'runtime/capacity')
+    parser.add_argument('--omp-wait-policy', choices=('default', 'passive'), default='default')
+    parser.add_argument('--feature-device', choices=('cpu', 'cuda:0'), default='cpu')
+    parser.add_argument('--check-cancel', action='store_true',
+                        help='After performance stages, cancel mobile while PC continues for 24 seconds')
     parser.add_argument('stages', nargs='+', help='manifest name and duration, e.g. pair-ab:120')
     args = parser.parse_args(argv)
     if not NAME_PATTERN.fullmatch(args.label):
@@ -79,6 +83,92 @@ def experiment_environment(args, environ=None):
     return env
 
 
+def experiment_command(args):
+    # systemd also inherits its manager environment, independently of our allowlist.
+    # Unset waiting overrides before libgomp is imported; default is not ACTIVE.
+    command = ['/usr/bin/env']
+    for key in ('OMP_WAIT_POLICY', 'GOMP_SPINCOUNT', 'MKL_NUM_THREADS', 'KMP_BLOCKTIME',
+                'ONEAXE_VOICE_EXPERIMENT_FEATURE_DEVICE', 'ONEAXE_VOICE_EXPERIMENT_FEATURE_PROBE'):
+        command.extend(('-u', key))
+    if args.omp_wait_policy == 'passive':
+        command.append('OMP_WAIT_POLICY=PASSIVE')
+    command.append('ONEAXE_VOICE_EXPERIMENT_FEATURE_DEVICE=' + args.feature_device)
+    command.append('ONEAXE_VOICE_EXPERIMENT_FEATURE_PROBE=' + ('1' if args.feature_device == 'cuda:0' else '0'))
+    return command + [str(ROOT / '.venv/bin/python'), '-m', 'oneaxe_voice.serve']
+
+
+def cpu_snapshot(group, api_pid, worker_pid):
+    """Read only the experiment cgroup; never serialize arbitrary process env."""
+    root = CGROUP_ROOT / group.lstrip('/')
+    counters = dict(line.split() for line in (root / 'cpu.stat').read_text().splitlines())
+    sample = {'monotonic': time.monotonic(),
+              'cpu_usec': {k: int(counters[k]) for k in ('usage_usec', 'user_usec', 'system_usec')},
+              'processes': []}
+    keys = {'OMP_WAIT_POLICY', 'GOMP_SPINCOUNT', 'MKL_NUM_THREADS', 'KMP_BLOCKTIME',
+            'OMP_NUM_THREADS', 'TOKENIZERS_PARALLELISM'}
+    for pid in remaining_pids(group):
+        proc = Path('/proc') / str(pid)
+        try:
+            fields = (proc / 'stat').read_text().rsplit(')', 1)[1].split()
+            name = (proc / 'comm').read_text().strip()
+            env = {}
+            for entry in (proc / 'environ').read_bytes().split(b'\0'):
+                key, sep, value = entry.partition(b'=')
+                if sep and key.decode(errors='replace') in keys:
+                    env[key.decode()] = value.decode(errors='replace')
+            role = ('api' if pid == api_pid else 'worker' if pid == worker_pid else
+                    'engine' if name.startswith('VLLM::Engine') else 'auxiliary')
+            sample['processes'].append({'pid': pid, 'role': role, 'start_ticks': int(fields[19]),
+                'cpu_seconds': (int(fields[11]) + int(fields[12])) / os.sysconf('SC_CLK_TCK'),
+                'thread_environment': env})
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+    return sample
+
+
+def cpu_difference(before, after):
+    wall = after['monotonic'] - before['monotonic']
+    seconds = {k.removesuffix('_usec') + '_seconds':
+               (after['cpu_usec'][k] - before['cpu_usec'][k]) / 1e6 for k in before['cpu_usec']}
+    prior = {(r['pid'], r['start_ticks']): r for r in before['processes']}
+    roles = {}
+    core_roles = {'api', 'worker', 'engine'}
+    identities = lambda sample: {(r['pid'], r['start_ticks'], r['role'])
+                                 for r in sample['processes'] if r['role'] in core_roles}
+    core_preserved = (identities(before) == identities(after)
+                      and {r['role'] for r in before['processes']} >= core_roles)
+    for row in after['processes']:
+        old = prior.get((row['pid'], row['start_ticks']))
+        if old is not None:
+            role = row['role']
+            roles[role] = roles.get(role, 0) + row['cpu_seconds'] - old['cpu_seconds']
+    return {'valid': wall > 0 and all(v >= 0 for v in seconds.values()) and core_preserved,
+            'core_processes_preserved': core_preserved,
+            'scope': 'isolated_service_cgroup_including_all_descendants',
+            'window': 'benchmark_process_start_to_exit_excluding_model_load_and_warmup',
+            'wall_seconds': wall, **seconds,
+            'mean_cores': seconds['usage_seconds'] / wall if wall > 0 else None,
+            'matched_process_cpu_seconds_by_role': roles,
+            'before': before, 'after': after}
+
+
+def cancellation_command(manifest, output):
+    rows = json.loads(manifest.read_text())['streams']
+    if len(rows) != 2 or {r['role'] for r in rows} != {'pc', 'mobile'}:
+        raise RuntimeError('cancellation check requires one PC and one mobile')
+    command = [str(ROOT / '.venv/bin/python'), str(ROOT / 'tests/e2e_concurrent.py'),
+               '--url', URL, '--seconds', '24', '--cancel-mobile-after', '8',
+               '--output', str(output)]
+    for row in rows:
+        role = row['role']
+        if row.get('offset', 0) != 0 or not row.get('keywords'):
+            raise RuntimeError('cancellation check requires zero offsets and distinct keywords')
+        command.extend(('--' + role + '-token-file', str((manifest.parent / row['token_file']).resolve()),
+                        '--' + role + '-audio', str((manifest.parent / row['audio_file']).resolve())))
+        command.extend('--' + role + '-keyword=' + keyword for keyword in row['keywords'])
+    return command
+
+
 def live_status(runtime):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
         conn.settimeout(2)
@@ -89,8 +179,16 @@ def live_status(runtime):
     if 'error' in value:
         raise RuntimeError('live status unavailable')
     busy = (value.get('state') != 'idle' or value.get('capture_active') or
-            value.get('warming') or value.get('preparing') or
+            value.get('warming') or value.get('preparing') or value.get('model_unloading') or
             value.get('model_status', {}).get('busy'))
+    token = (runtime / 'client.token').read_text().strip()
+    with httpx.Client(trust_env=False, timeout=2) as client:
+        response = client.get('http://127.0.0.1:8097/api/dictation/status',
+                              headers={'Authorization': 'Bearer ' + token})
+        response.raise_for_status()
+        model = response.json()
+    busy = (busy or model.get('state') != 'ready' or model.get('busy') is not False
+            or model.get('active_sessions') != [] or model.get('model_unloading'))
     return {'idle': not bool(busy), 'state': value.get('state')}
 
 
@@ -195,6 +293,8 @@ async def main(args):
     base.mkdir(parents=True, exist_ok=True, mode=0o700)
     logpath = base / f'{args.label}-api.log'
     evidence = {'label': args.label, 'capacity': args.capacity, 'kv_gib': args.kv_gib,
+                'omp_wait_policy': args.omp_wait_policy,
+                'feature_device': args.feature_device,
                 'started_at': time.time(), 'stages': [], 'passed': False}
     api = bench = watcher = operation = None
     api_log = None
@@ -218,13 +318,16 @@ async def main(args):
             raise RuntimeError('live dictation is active before experiment')
         probe = socket.socket()
         try:
+            # Match the server's reuse semantics after the preceding isolated
+            # run; TIME_WAIT is not a live listener occupying the port.
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             probe.bind(('127.0.0.1', 18098))
         finally:
             probe.close()
         env = experiment_environment(args)
         api_log = logpath.open('wb')
         launch = asyncio.create_task(isolated.start(
-            [str(ROOT / '.venv/bin/python'), '-m', 'oneaxe_voice.serve'], env, api_log))
+            experiment_command(args), env, api_log))
         try:
             api = await asyncio.shield(launch)
         except asyncio.CancelledError:
@@ -263,6 +366,8 @@ async def main(args):
                     manifest, seconds = stage.split(':')
                     name = f'{args.label}-{manifest}-{seconds}s'
                     result_path = base / f'{name}.json'
+                    group = (await unit_state(isolated.name))['ControlGroup']
+                    cpu_before = cpu_snapshot(group, evidence['api_pid'], before['worker_pid'])
                     with (base / f'{name}.log').open('wb') as output:
                         bench = await asyncio.create_subprocess_exec(str(ROOT / '.venv/bin/python'),
                             str(ROOT / 'tests/e2e_capacity.py'), '--url', URL,
@@ -271,13 +376,28 @@ async def main(args):
                             cwd=ROOT, stdout=output, stderr=asyncio.subprocess.STDOUT)
                         print(json.dumps({'phase': args.label, 'event': 'stage_started', 'stage': stage}), flush=True)
                         code = await bench.wait()
+                    cpu = cpu_difference(cpu_before, cpu_snapshot(
+                        group, evidence['api_pid'], before['worker_pid']))
                     result = json.loads(result_path.read_text()) if result_path.exists() else {}
                     evidence['stages'].append({'name': name, 'exit_code': code,
-                        'passed': result.get('passed', False), 'output': str(result_path)})
+                        'passed': result.get('passed', False), 'output': str(result_path), 'cpu': cpu})
                     print(json.dumps({'phase': args.label, 'event': 'stage_finished', 'stage': stage,
                         'exit_code': code, 'passed': result.get('passed')}), flush=True)
-                    if code != 0 or not result.get('passed') or not result.get('measurement_valid'):
+                    if code != 0 or not result.get('passed') or not result.get('measurement_valid') or not cpu['valid']:
                         raise RuntimeError('benchmark failed: ' + name)
+                if args.check_cancel:
+                    result_path = base / f'{args.label}-cancel.json'
+                    command = cancellation_command(base / f'{args.stages[0].split(":")[0]}.json', result_path)
+                    with (base / f'{args.label}-cancel.log').open('wb') as output:
+                        bench = await asyncio.create_subprocess_exec(*command, cwd=ROOT,
+                            stdout=output, stderr=asyncio.subprocess.STDOUT)
+                        print(json.dumps({'phase': args.label, 'event': 'cancel_check_started'}), flush=True)
+                        code = await bench.wait()
+                    result = json.loads(result_path.read_text()) if result_path.exists() else {}
+                    evidence['cancel_check'] = {'exit_code': code, 'passed': result.get('passed', False),
+                                                'output': str(result_path)}
+                    if code != 0 or not result.get('passed'):
+                        raise RuntimeError('mobile cancellation isolation check failed')
                 final = (await client.get('/api/dictation/status')).json()
                 assert (not final['busy'] and final['worker_pid'] == before['worker_pid']
                         and final['model_generation'] == before['model_generation'])
@@ -290,6 +410,8 @@ async def main(args):
         evidence['passed'] = True
     except BaseException as exc:
         evidence['failure_kind'] = type(exc).__name__
+        if isinstance(exc, OSError):
+            evidence['failure_errno'] = exc.errno
         # Only locally defined errors and status codes; no response/token/body.
         evidence['failure_reason'] = str(exc) if isinstance(exc, (RuntimeError, AssertionError)) else type(exc).__name__
     finally:

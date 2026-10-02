@@ -37,13 +37,16 @@ class PreparedStep:
 
 
 class AsyncR2T2Adapter:
-    def __init__(self, engine, official, helpers, sampling_factory, *, configuration=None):
+    def __init__(self, engine, official, helpers, sampling_factory, *, configuration=None, feature_device="cpu"):
+        if feature_device not in {"cpu", "cuda:0"}:
+            raise ValueError("Invalid experimental feature device")
         self.engine = engine
         self.official = official
         self.processor = official.processor
         self.helpers = helpers
         self.sampling_factory = sampling_factory
         self.configuration = dict(configuration or {})
+        self.feature_device = feature_device
 
     def init_streaming_state(self, **kwargs):
         return self.official.init_streaming_state(**kwargs)
@@ -160,8 +163,13 @@ class AsyncR2T2Adapter:
 
     async def generate(self, step, request_id):
         output = None
+        inputs = step.input()
+        if self.feature_device != "cpu":
+            # Qwen's inherited processor creates audio_kwargs before vLLM's
+            # shallow config merge; the device must travel with each request.
+            inputs["mm_processor_kwargs"] = {"audio_kwargs": {"device": self.feature_device}}
         try:
-            async for value in self.engine.generate(step.input(), self.sampling_factory(step.max_tokens), request_id):
+            async for value in self.engine.generate(inputs, self.sampling_factory(step.max_tokens), request_id):
                 if value.finished:
                     output = value
         except Exception as exc:

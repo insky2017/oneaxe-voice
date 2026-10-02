@@ -1,5 +1,13 @@
 # 验证记录
 
+## 2026-10-02：CPU 等待与 GPU 特征隔离研究
+
+研究分支 `codex/multi-stream-capacity`，正式服务未部署、仍两路。原配置前后各一次、CPU PASSIVE、PASSIVE + GPU 特征，各完成真实两路 120 秒；两候选另完成 24 秒手机取消 / PC 继续检查。每路样本及 750/4/1 事件完整，候选最终转写 hash 与前后原配置一致；两候选分别相对前后基线通过速度门槛。CPU cgroup 平均核数为 2.602 → 1.007 → 0.878 → 2.638。GPU warmup 实际 FFT / Mel tensor 均为 `cuda:0`，性能阶段探针已关闭。
+
+CPU 单元/组件回归：`OMP_NUM_THREADS=1 CUDA_VISIBLE_DEVICES='' .venv/bin/python -m unittest discover -s tests -q`，**264 项通过**；日志 `work/preprocess-study/cpu-suite-e2e.log`。取消测试已修复无 final 的 EOF 可被误判通过的问题；两个实测候选都收到明确 cancelled final。全部实验 cgroup 清理通过，正式 worker、VPlus 未重启。
+
+这不是新增容量、10 分钟长测、Android 真机或桌面输入验收。前一轮 GPU 特征 `1e-5` 数值阈值失败未改写；本轮仅证明两份受控音频的最终文字一致。完整方法、失败记录及限制见[研究报告](preprocessing-e2e-2026-10-02.md)与[证据 JSON](evidence/preprocessing-e2e-2026-10-02.json)。
+
 日期：2026-09-26，时区 Asia/Shanghai。以下运行数据在 `~/tools/oneaxe-voice` checkout 上收集，按实施阶段记录；初始分支为 `codex/initial-api`，第三阶段在 `codex/vad-streaming` 开发，交付主分支为 `master`。这些是该机器当时的测量，不代表其他安装环境已经通过验证。本记录区分自动化模拟测试、真实 GPU 验证、用户试用和 VPlus 隔离检查。
 
 ## 自动化验证

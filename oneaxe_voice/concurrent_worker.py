@@ -165,7 +165,92 @@ def engine_configuration(model_dir):
                                    "cudagraph_capture_sizes": sorted(capture_sizes)}}
 
 
+def experimental_feature_configuration():
+    device = os.environ.get("ONEAXE_VOICE_EXPERIMENT_FEATURE_DEVICE", "cpu")
+    probe = os.environ.get("ONEAXE_VOICE_EXPERIMENT_FEATURE_PROBE", "1" if device == "cuda:0" else "0")
+    if device not in {"cpu", "cuda:0"} or probe not in {"0", "1"}:
+        raise ValueError("Invalid experimental feature configuration")
+    return device, probe == "1"
+
+
+class FeatureDeviceProbe:
+    """Warmup-only tensor device evidence; never records waveforms or text."""
+
+    def __init__(self, expected_device):
+        if expected_device not in {"cpu", "cuda:0"}:
+            raise ValueError("Invalid experimental feature device")
+        self.expected_device = expected_device
+        self.calls = 0
+        self.argument_devices = {}
+        self.fft_tensor_devices = {}
+        self.mel_tensor_devices = {}
+        self.extractor_class = self.original = self.wrapper = None
+
+    def install(self):
+        import torch
+        from torch.utils._python_dispatch import TorchDispatchMode
+        from transformers import WhisperFeatureExtractor
+
+        if self.wrapper is not None:
+            raise RuntimeError("Feature probe already installed")
+        probe = self
+
+        class TensorDevices(TorchDispatchMode):
+            def __init__(self):
+                self.fft_operations = self.mel_operations = 0
+                super().__init__()
+
+            def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+                operation = func._schema.name
+                target = None
+                if operation in {"aten::stft", "aten::_fft_r2c"}:
+                    self.fft_operations += 1
+                    target = probe.fft_tensor_devices
+                elif operation in {"aten::mm", "aten::bmm", "aten::matmul"}:
+                    self.mel_operations += 1
+                    target = probe.mel_tensor_devices
+                if target is not None:
+                    for tensor in args:
+                        if isinstance(tensor, torch.Tensor):
+                            device = str(tensor.device)
+                            target[device] = target.get(device, 0) + 1
+                            if device != probe.expected_device:
+                                raise RuntimeError("Feature tensor device mismatch")
+                return func(*args, **(kwargs or {}))
+
+        original = WhisperFeatureExtractor._torch_extract_fbank_features
+
+        def traced(extractor, waveform, device="cpu"):
+            device = str(device)
+            probe.argument_devices[device] = probe.argument_devices.get(device, 0) + 1
+            if device != probe.expected_device:
+                raise RuntimeError("Feature device argument mismatch")
+            with TensorDevices() as trace:
+                output = original(extractor, waveform, device)
+            if not trace.fft_operations or not trace.mel_operations:
+                raise RuntimeError("Feature tensor device verification unavailable")
+            probe.calls += 1
+            return output
+
+        self.extractor_class, self.original, self.wrapper = WhisperFeatureExtractor, original, traced
+        WhisperFeatureExtractor._torch_extract_fbank_features = traced
+        return self
+
+    def snapshot(self):
+        return {"scope": "warmup", "expected_device": self.expected_device,
+                "feature_calls": self.calls, "argument_devices": dict(self.argument_devices),
+                "fft_tensor_devices": dict(self.fft_tensor_devices),
+                "mel_tensor_devices": dict(self.mel_tensor_devices)}
+
+    def close(self):
+        if self.wrapper is not None:
+            if self.extractor_class._torch_extract_fbank_features is self.wrapper:
+                self.extractor_class._torch_extract_fbank_features = self.original
+            self.extractor_class = self.original = self.wrapper = None
+
+
 async def load_model(model_dir):
+    feature_device, feature_probe_enabled = experimental_feature_configuration()
     os.environ["ONEAXE_VOICE_REGISTER_QWEN"] = "1"
     register_qwen_backend()
     import torch
@@ -185,6 +270,7 @@ async def load_model(model_dir):
 
     config = engine_configuration(model_dir)
     engine = AsyncLLM.from_engine_args(AsyncEngineArgs(**config))
+    probe = None
     try:
         processor = Qwen3ASRProcessor.from_pretrained(str(model_dir), fix_mistral_regex=True, local_files_only=True)
         official = R2T2ASRModel(backend="vllm", model=engine, processor=processor)
@@ -192,9 +278,15 @@ async def load_model(model_dir):
                                   parse_language=parse_language_output, parse_output=parse_asr_output)
         samples = lambda count: SamplingParams(temperature=0.0, max_tokens=count, skip_special_tokens=True,
                                               output_kind=RequestOutputKind.FINAL_ONLY)
-        return AsyncR2T2Adapter(engine, official, helpers, samples,
-                               configuration=config), config["max_num_seqs"]
+        model = AsyncR2T2Adapter(engine, official, helpers, samples,
+                                configuration=config, feature_device=feature_device)
+        if feature_probe_enabled:
+            probe = FeatureDeviceProbe(feature_device).install()
+        model.feature_probe = probe
+        return model, config["max_num_seqs"]
     except BaseException:
+        if probe is not None:
+            probe.close()
         engine.shutdown()
         raise
 
@@ -282,10 +374,20 @@ async def run():
         with open(os.devnull, "w") as quiet, redirect_stdout(quiet):
             model, capacity = await load_model(model_dir)
             warmup = await warm_model(model, capacity=capacity)
+            probe = getattr(model, "feature_probe", None)
+            feature_evidence = None
+            if probe is not None:
+                feature_evidence = probe.snapshot()
+                probe.close()
+                if not feature_evidence["feature_calls"]:
+                    raise RuntimeError("Feature probe observed no warmup extraction")
+                print("feature_device_probe", json.dumps(feature_evidence, sort_keys=True),
+                      file=sys.stderr, flush=True)
             effective_config = {key: value for key, value in model.configuration.items() if key != "model"}
             writer.write((json.dumps({"ready": True, "device": "cuda:0", "mode": mode,
                                       "capacity": capacity, "engine_config": effective_config,
-                                      "warmup": warmup}) + "\n").encode())
+                                      "feature_device": model.feature_device,
+                                      "feature_probe": feature_evidence, "warmup": warmup}) + "\n").encode())
             await writer.drain()
             await serve(reader, writer, ConcurrentSessions(model, capacity=capacity))
     except Exception as exc:
@@ -298,6 +400,9 @@ async def run():
             await writer.drain()
     finally:
         if model is not None:
+            probe = getattr(model, "feature_probe", None)
+            if probe is not None:
+                probe.close()
             model.engine.shutdown()
         writer.close()
         with suppress(Exception):
