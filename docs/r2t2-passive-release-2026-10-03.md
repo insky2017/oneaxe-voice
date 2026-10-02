@@ -2,6 +2,8 @@
 
 日期：2026-10-03。代码提交：`cdf00bd`。已部署到正式 `master`，重启一次 `oneaxe-voice.service`。容量仍为 **1 路 PC + 1 路手机**。
 
+后续：[Qwen 流式也已验证并启用被动等待](qwen-passive-release-2026-10-03.md)。下文保留本次 R2T2 发布时的记录。
+
 ## 要点
 
 - R2T2 启动时启用 `OMP_WAIT_POLICY=PASSIVE`，让 CPU 线程在等待时休息。仍使用 4 个 CPU 线程；CPU 做音频特征处理，GPU 做模型推理。

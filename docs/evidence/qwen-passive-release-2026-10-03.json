@@ -1,0 +1,2138 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-03",
+  "deployed": true,
+  "passed": true,
+  "scope": "Qwen streaming CPU wait policy; single-session only",
+  "source_revision": "2c5f4277afea4b0aa899f906317c620ddff4e23a",
+  "cpu_tests": {
+    "count": 204,
+    "passed": true,
+    "command": "OMP_NUM_THREADS=1 CUDA_VISIBLE_DEVICES='' .venv/bin/python -m unittest discover -s tests -q"
+  },
+  "comparison": {
+    "passed": true,
+    "checks": {
+      "baseline_passed": true,
+      "candidate_passed": true,
+      "both_cpu_valid": true,
+      "same_duration": true,
+      "same_flush_schedule": true,
+      "same_input": true,
+      "same_decoder_source": true,
+      "same_client_source": true,
+      "same_final_text": true,
+      "same_stream_fixed_and_pending": true,
+      "candidate_cancel_and_reuse": true,
+      "cpu_reduction": true,
+      "heavy_inference_p95": true,
+      "ack_lag_p95": true,
+      "late_lag_growth": true,
+      "finish": true,
+      "flush_1": true,
+      "flush_2": true,
+      "first_fixed": true
+    },
+    "thresholds": {
+      "cpu_reduction_min_fraction": 0.2,
+      "inference_p95_ratio_max": 1.2,
+      "inference_min_allowance_ms": 100,
+      "ack_lag_p95_increase_max_seconds": 0.1,
+      "finish_and_flush_ratio_max": 1.2,
+      "finish_and_flush_min_allowance_seconds": 0.1
+    },
+    "measures": {
+      "cpu_reduction_fraction": 0.4040987001454923,
+      "default_cpu_cores": 0.2554054109891213,
+      "passive_cpu_cores": 0.15219641639829212,
+      "heavy_inference_p95_ms": {
+        "default": 263.181,
+        "passive": 225.311
+      },
+      "ack_lag_p95_seconds": {
+        "default": 0.130114,
+        "passive": 0.115269
+      },
+      "passive_late_lag_growth_seconds": -0.007339,
+      "finish_seconds": {
+        "default": 0.121169,
+        "passive": 0.089541
+      },
+      "flush_1_seconds": {
+        "default": 0.137871,
+        "passive": 0.102142
+      },
+      "flush_2_seconds": {
+        "default": 0.111503,
+        "passive": 0.092517
+      },
+      "first_fixed_seconds": {
+        "default": 8.14778,
+        "passive": 8.124179
+      }
+    }
+  },
+  "isolated_profiles": [
+    {
+      "schema_version": 1,
+      "label": "qwen-default-20261003",
+      "passed": true,
+      "mode": "qwen-stream",
+      "policy": "default",
+      "seconds": 120,
+      "flush_seconds": 40,
+      "started_at": 1790963868.6999462,
+      "source_revision": "08899f4eb78b818512ba649caefe24bf7a40da0b",
+      "source_sha256": {
+        "oneaxe_voice/engines.py": "fbe9cbc878ca8d62811dea4ea5815c7159adc31c56c2e8b59cafa48fad5b02e9",
+        "oneaxe_voice/stream_worker.py": "0ed7092d3827aeaf14c7d9c46ee505b50ac64909ea0b6ef2bed20c8423fded64",
+        "tests/e2e_qwen_wait.py": "d4ec92117411d9585267c57e244fc0e9c6dbc350a0a1bacc66a8db57422086b9",
+        "tests/run_qwen_wait_profile.py": "ed2281193e5d7be16cce17684f29b9c83a04d849e69b487f00babf93173f460f",
+        "tests/wait_profile_support.py": "092f9cc48898323e382a293ed93a7714a39036c1c73c5522ab25d59008775f9f"
+      },
+      "api_pid": 4174323,
+      "ready": {
+        "state": "ready",
+        "mode": "qwen-stream",
+        "device": "cuda:0",
+        "worker_pid": 4174348,
+        "model_generation": "8fc7950f512846ecb4371afe0d0b6d04"
+      },
+      "gpu_processes_at_ready": [
+        {
+          "pid": 4174348,
+          "memory_mib": 386.0
+        },
+        {
+          "pid": 4175376,
+          "memory_mib": 5484.0
+        }
+      ],
+      "cpu": {
+        "valid": true,
+        "core_processes_preserved": true,
+        "scope": "isolated_service_cgroup_including_all_descendants",
+        "window": "real_clock_protocol_case_excluding_load_and_warmup",
+        "wall_seconds": 120.32084943301743,
+        "usage_seconds": 30.730596,
+        "user_seconds": 27.553878,
+        "system_seconds": 3.176718,
+        "mean_cores": 0.2554054109891213,
+        "matched_process_cpu_seconds_by_role": {
+          "api": 1.6599999999999997,
+          "worker": 15.089999999999996,
+          "auxiliary": 0.0,
+          "engine": 13.990000000000002
+        },
+        "before": {
+          "monotonic": 182362.840617049,
+          "cpu_usec": {
+            "usage_usec": 76141350,
+            "user_usec": 68710703,
+            "system_usec": 7430647
+          },
+          "processes": [
+            {
+              "pid": 4174323,
+              "role": "api",
+              "start_ticks": 18229710,
+              "cpu_seconds": 0.91,
+              "thread_environment": {}
+            },
+            {
+              "pid": 4174348,
+              "role": "worker",
+              "start_ticks": 18229794,
+              "cpu_seconds": 29.67,
+              "thread_environment": {
+                "OMP_NUM_THREADS": "4",
+                "TOKENIZERS_PARALLELISM": "false"
+              }
+            },
+            {
+              "pid": 4175375,
+              "role": "auxiliary",
+              "start_ticks": 18231865,
+              "cpu_seconds": 0.04,
+              "thread_environment": {
+                "OMP_NUM_THREADS": "4",
+                "TOKENIZERS_PARALLELISM": "false"
+              }
+            },
+            {
+              "pid": 4175376,
+              "role": "engine",
+              "start_ticks": 18231866,
+              "cpu_seconds": 45.41,
+              "thread_environment": {}
+            }
+          ]
+        },
+        "after": {
+          "monotonic": 182483.161466482,
+          "cpu_usec": {
+            "usage_usec": 106871946,
+            "user_usec": 96264581,
+            "system_usec": 10607365
+          },
+          "processes": [
+            {
+              "pid": 4174323,
+              "role": "api",
+              "start_ticks": 18229710,
+              "cpu_seconds": 2.57,
+              "thread_environment": {}
+            },
+            {
+              "pid": 4174348,
+              "role": "worker",
+              "start_ticks": 18229794,
+              "cpu_seconds": 44.76,
+              "thread_environment": {
+                "OMP_NUM_THREADS": "4",
+                "TOKENIZERS_PARALLELISM": "false"
+              }
+            },
+            {
+              "pid": 4175375,
+              "role": "auxiliary",
+              "start_ticks": 18231865,
+              "cpu_seconds": 0.04,
+              "thread_environment": {
+                "OMP_NUM_THREADS": "4",
+                "TOKENIZERS_PARALLELISM": "false"
+              }
+            },
+            {
+              "pid": 4175376,
+              "role": "engine",
+              "start_ticks": 18231866,
+              "cpu_seconds": 59.4,
+              "thread_environment": {}
+            }
+          ]
+        }
+      },
+      "worker_preserved": true,
+      "model_preserved": true,
+      "unit_cleanup": {
+        "unit": "oneaxe-voice-capacity-d606923e40a8468596f5addf138579b4.service",
+        "passed": true,
+        "state": {
+          "MainPID": "0",
+          "ControlGroup": "",
+          "LoadState": "not-found",
+          "ActiveState": "inactive",
+          "SubState": "dead"
+        },
+        "remaining_owned_pids": []
+      },
+      "finished_at": 1790964055.395453,
+      "case": {
+        "schema_version": 1,
+        "protocol": "qwen-legacy-request-reply",
+        "passed": true,
+        "failure": null,
+        "event_counts": {
+          "captured_audio": 750,
+          "audio_sent": 750,
+          "audio_acked": 750,
+          "flush_sent": 2,
+          "flush_acked": 2,
+          "finish_sent": 1,
+          "finish_acked": 1,
+          "cancel_sent": 0,
+          "ready": 1,
+          "partial": 752,
+          "final": 1,
+          "error": 0,
+          "other": 0,
+          "total_received": 754,
+          "fixed_updates": 42,
+          "pending_updates": 54,
+          "qwen_2s_boundary_acks": 60,
+          "max_queue": 2
+        },
+        "ready_binding": {
+          "mode": "qwen-stream",
+          "request_id": "bcf632f3-ea97-4064-9f3a-b81b3161bae7"
+        },
+        "close": {
+          "observed_before_cleanup": true,
+          "code": 1000,
+          "cleanup_completed": true
+        },
+        "flushes": [
+          {
+            "sent_at_seconds": 40.123849,
+            "reply_at_seconds": 40.26172,
+            "roundtrip_seconds": 0.137871,
+            "queue_delay_seconds": 0.123617,
+            "audio_seconds": 40.0,
+            "inference_ms": 135.22,
+            "text_sha256": "2193de45a752f1196704e2fc180f2230647b15c847108e76425b63e1d56a62d9",
+            "characters": 92,
+            "pending_characters": 0,
+            "scheduled_audio_seconds": 40
+          },
+          {
+            "sent_at_seconds": 80.128883,
+            "reply_at_seconds": 80.240385,
+            "roundtrip_seconds": 0.111503,
+            "queue_delay_seconds": 0.128449,
+            "audio_seconds": 80.0,
+            "inference_ms": 108.5,
+            "text_sha256": "79d5e48462b3535f14d817c9e97e5a32d5aeb4bc194a4dfcb6795c0b708be03e",
+            "characters": 184,
+            "pending_characters": 0,
+            "scheduled_audio_seconds": 80
+          }
+        ],
+        "finish": {
+          "sent_at_seconds": 120.140692,
+          "reply_at_seconds": 120.261861,
+          "roundtrip_seconds": 0.121169,
+          "queue_delay_seconds": 0.139651,
+          "audio_seconds": 120.0,
+          "inference_ms": 118.2,
+          "text_sha256": "aca1425354a36b795c415a432367375fdc0a89d3293e1f3199e116ced67eea13",
+          "characters": 276,
+          "pending_characters": 0
+        },
+        "cancel": null,
+        "checks": {
+          "ready_binding": true,
+          "sequence_and_prefix": true,
+          "sent_audio_progress_and_device": true,
+          "window_within_30_seconds": true,
+          "capture_completed": true,
+          "normal_server_close": true,
+          "all_audio_acked": true,
+          "expected_event_counts": true,
+          "final_without_pending": true,
+          "nonempty_final": true,
+          "ack_lag_p95_within_target": true,
+          "realtime_fixed": true,
+          "realtime_pending": true,
+          "crossed_30_second_window": true
+        },
+        "thresholds": {
+          "ack_lag_p95_seconds": 2.0,
+          "capture_queue_items": 400,
+          "window_seconds": 30
+        },
+        "expected": {
+          "capture_seconds": 120,
+          "audio_samples": 1920000,
+          "audio_frames": 750,
+          "flushes": 2,
+          "finish": 1,
+          "cancel": 0
+        },
+        "input_audio": {
+          "sample_seconds": 10,
+          "sample_sha256": "d2568087659128ce6e5ceee18d2f17e6072b52e4124179540a9721ff3b1770b8",
+          "frame_samples": 2560,
+          "sample_rate": 16000
+        },
+        "ready_seconds": 0.012813,
+        "capture_stop": {
+          "at_seconds": 120.001027,
+          "sent_samples": 1917440,
+          "acked_samples": 1917440,
+          "queued_items": 1
+        },
+        "elapsed_seconds": 120.317105,
+        "audio": {
+          "captured_samples": 1920000,
+          "sent_samples": 1920000,
+          "acked_samples": 1920000,
+          "unsent_samples": 0,
+          "unacked_samples": 0,
+          "sent_pcm_sha256": "6bfa0b6a58b792a590312d39fae6c8a801c0aad48cb11813b05601f918b5eda3"
+        },
+        "text": {
+          "latest_sha256": "aca1425354a36b795c415a432367375fdc0a89d3293e1f3199e116ced67eea13",
+          "final_sha256": "aca1425354a36b795c415a432367375fdc0a89d3293e1f3199e116ced67eea13",
+          "characters": 276,
+          "pending_characters": 0,
+          "first_fixed_seconds": 8.14778,
+          "first_pending_seconds": 2.170753,
+          "live_fixed_updates": 40,
+          "live_pending_updates": 53
+        },
+        "stream_sha256": "a357199546cda01b8141434cd0360715b025e203901b8944beaf9ef3ab41a0d7",
+        "windows": {
+          "max_reported_seconds": 30.0,
+          "max_contiguous_audio_seconds": 40.0,
+          "crossed_30_second_window": true
+        },
+        "latency": {
+          "ack_lag_seconds": {
+            "count": 750,
+            "p50": 0.004494,
+            "p95": 0.130114,
+            "p99": 0.171084,
+            "max": 0.330796
+          },
+          "lag_early": {
+            "count": 250,
+            "p50": 0.004447,
+            "p95": 0.147672,
+            "p99": 0.174312,
+            "max": 0.330796
+          },
+          "lag_late": {
+            "count": 251,
+            "p50": 0.004592,
+            "p95": 0.130454,
+            "p99": 0.154982,
+            "max": 0.300141
+          },
+          "queue_delay_seconds": {
+            "count": 750,
+            "p50": 0.000126,
+            "p95": 0.000171,
+            "p99": 0.01462,
+            "max": 0.172126
+          },
+          "ack_roundtrip_seconds": {
+            "count": 750,
+            "p50": 0.004354,
+            "p95": 0.127223,
+            "p99": 0.170258,
+            "max": 0.330637
+          },
+          "audio_inference_ms": {
+            "count": 750,
+            "p50": 0.11,
+            "p95": 122.5275,
+            "p99": 165.1963,
+            "max": 325.84
+          },
+          "producer_schedule_lag_seconds": {
+            "count": 750,
+            "p50": 0.000835,
+            "p95": 0.001385,
+            "p99": 0.001993,
+            "max": 0.01896
+          },
+          "qwen_2s_boundary_ack_lag_seconds": {
+            "count": 60,
+            "p50": 0.135991,
+            "p95": 0.267351,
+            "p99": 0.31271,
+            "max": 0.330796
+          },
+          "qwen_2s_boundary_inference_ms": {
+            "count": 60,
+            "p50": 131.12,
+            "p95": 263.181,
+            "p99": 307.9099,
+            "max": 325.84
+          },
+          "late_minus_early_p95_seconds": -0.017218
+        }
+      }
+    },
+    {
+      "schema_version": 1,
+      "label": "qwen-passive-20261003",
+      "passed": true,
+      "mode": "qwen-stream",
+      "policy": "passive",
+      "seconds": 120,
+      "flush_seconds": 40,
+      "started_at": 1790964167.9509158,
+      "source_revision": "2c5f4277afea4b0aa899f906317c620ddff4e23a",
+      "source_sha256": {
+        "oneaxe_voice/engines.py": "c4b21d0f22c3ac723d89a6dc544286e24a4f26d42c7f5a94d08158be33497492",
+        "oneaxe_voice/stream_worker.py": "0ed7092d3827aeaf14c7d9c46ee505b50ac64909ea0b6ef2bed20c8423fded64",
+        "tests/e2e_qwen_wait.py": "d4ec92117411d9585267c57e244fc0e9c6dbc350a0a1bacc66a8db57422086b9",
+        "tests/run_qwen_wait_profile.py": "ed2281193e5d7be16cce17684f29b9c83a04d849e69b487f00babf93173f460f",
+        "tests/wait_profile_support.py": "092f9cc48898323e382a293ed93a7714a39036c1c73c5522ab25d59008775f9f"
+      },
+      "api_pid": 9348,
+      "ready": {
+        "state": "ready",
+        "mode": "qwen-stream",
+        "device": "cuda:0",
+        "worker_pid": 9415,
+        "model_generation": "5043eee8a7394f89b0d084e0c14dca16"
+      },
+      "gpu_processes_at_ready": [
+        {
+          "pid": 9415,
+          "memory_mib": 386.0
+        },
+        {
+          "pid": 10554,
+          "memory_mib": 5484.0
+        }
+      ],
+      "cpu": {
+        "valid": true,
+        "core_processes_preserved": true,
+        "scope": "isolated_service_cgroup_including_all_descendants",
+        "window": "real_clock_protocol_case_excluding_load_and_warmup",
+        "wall_seconds": 120.26405373500893,
+        "usage_seconds": 18.303758,
+        "user_seconds": 15.12422,
+        "system_seconds": 3.179539,
+        "mean_cores": 0.15219641639829212,
+        "matched_process_cpu_seconds_by_role": {
+          "api": 1.5899999999999999,
+          "worker": 4.449999999999996,
+          "auxiliary": 0.0,
+          "engine": 12.270000000000003
+        },
+        "before": {
+          "monotonic": 182663.690471854,
+          "cpu_usec": {
+            "usage_usec": 72230037,
+            "user_usec": 64496992,
+            "system_usec": 7733044
+          },
+          "processes": [
+            {
+              "pid": 9348,
+              "role": "api",
+              "start_ticks": 18259640,
+              "cpu_seconds": 0.98,
+              "thread_environment": {}
+            },
+            {
+              "pid": 9415,
+              "role": "worker",
+              "start_ticks": 18259728,
+              "cpu_seconds": 29.28,
+              "thread_environment": {
+                "OMP_NUM_THREADS": "4",
+                "TOKENIZERS_PARALLELISM": "false",
+                "OMP_WAIT_POLICY": "PASSIVE"
+              }
+            },
+            {
+              "pid": 10553,
+              "role": "auxiliary",
+              "start_ticks": 18261827,
+              "cpu_seconds": 0.06,
+              "thread_environment": {
+                "OMP_NUM_THREADS": "4",
+                "TOKENIZERS_PARALLELISM": "false",
+                "OMP_WAIT_POLICY": "PASSIVE"
+              }
+            },
+            {
+              "pid": 10554,
+              "role": "engine",
+              "start_ticks": 18261827,
+              "cpu_seconds": 41.79,
+              "thread_environment": {}
+            }
+          ]
+        },
+        "after": {
+          "monotonic": 182783.954525589,
+          "cpu_usec": {
+            "usage_usec": 90533795,
+            "user_usec": 79621212,
+            "system_usec": 10912583
+          },
+          "processes": [
+            {
+              "pid": 9348,
+              "role": "api",
+              "start_ticks": 18259640,
+              "cpu_seconds": 2.57,
+              "thread_environment": {}
+            },
+            {
+              "pid": 9415,
+              "role": "worker",
+              "start_ticks": 18259728,
+              "cpu_seconds": 33.73,
+              "thread_environment": {
+                "OMP_NUM_THREADS": "4",
+                "TOKENIZERS_PARALLELISM": "false",
+                "OMP_WAIT_POLICY": "PASSIVE"
+              }
+            },
+            {
+              "pid": 10553,
+              "role": "auxiliary",
+              "start_ticks": 18261827,
+              "cpu_seconds": 0.06,
+              "thread_environment": {
+                "OMP_NUM_THREADS": "4",
+                "TOKENIZERS_PARALLELISM": "false",
+                "OMP_WAIT_POLICY": "PASSIVE"
+              }
+            },
+            {
+              "pid": 10554,
+              "role": "engine",
+              "start_ticks": 18261827,
+              "cpu_seconds": 54.06,
+              "thread_environment": {}
+            }
+          ]
+        }
+      },
+      "worker_preserved": true,
+      "model_preserved": true,
+      "unit_cleanup": {
+        "unit": "oneaxe-voice-capacity-81ad18f4ee824102bc8b41b5cc39e99c.service",
+        "passed": true,
+        "state": {
+          "MainPID": "0",
+          "ControlGroup": "",
+          "LoadState": "not-found",
+          "ActiveState": "inactive",
+          "SubState": "dead"
+        },
+        "remaining_owned_pids": []
+      },
+      "finished_at": 1790964376.4404676,
+      "case": {
+        "schema_version": 1,
+        "protocol": "qwen-legacy-request-reply",
+        "passed": true,
+        "failure": null,
+        "event_counts": {
+          "captured_audio": 750,
+          "audio_sent": 750,
+          "audio_acked": 750,
+          "flush_sent": 2,
+          "flush_acked": 2,
+          "finish_sent": 1,
+          "finish_acked": 1,
+          "cancel_sent": 0,
+          "ready": 1,
+          "partial": 752,
+          "final": 1,
+          "error": 0,
+          "other": 0,
+          "total_received": 754,
+          "fixed_updates": 42,
+          "pending_updates": 54,
+          "qwen_2s_boundary_acks": 60,
+          "max_queue": 2
+        },
+        "ready_binding": {
+          "mode": "qwen-stream",
+          "request_id": "d5d07115-62ec-4c00-8b7c-a3c9b99426ce"
+        },
+        "close": {
+          "observed_before_cleanup": true,
+          "code": 1000,
+          "cleanup_completed": true
+        },
+        "flushes": [
+          {
+            "sent_at_seconds": 40.117539,
+            "reply_at_seconds": 40.219681,
+            "roundtrip_seconds": 0.102142,
+            "queue_delay_seconds": 0.116949,
+            "audio_seconds": 40.0,
+            "inference_ms": 99.69,
+            "text_sha256": "2193de45a752f1196704e2fc180f2230647b15c847108e76425b63e1d56a62d9",
+            "characters": 92,
+            "pending_characters": 0,
+            "scheduled_audio_seconds": 40
+          },
+          {
+            "sent_at_seconds": 80.1167,
+            "reply_at_seconds": 80.209217,
+            "roundtrip_seconds": 0.092517,
+            "queue_delay_seconds": 0.115631,
+            "audio_seconds": 80.0,
+            "inference_ms": 90.23,
+            "text_sha256": "79d5e48462b3535f14d817c9e97e5a32d5aeb4bc194a4dfcb6795c0b708be03e",
+            "characters": 184,
+            "pending_characters": 0,
+            "scheduled_audio_seconds": 80
+          }
+        ],
+        "finish": {
+          "sent_at_seconds": 120.11731,
+          "reply_at_seconds": 120.206851,
+          "roundtrip_seconds": 0.089541,
+          "queue_delay_seconds": 0.116408,
+          "audio_seconds": 120.0,
+          "inference_ms": 87.23,
+          "text_sha256": "aca1425354a36b795c415a432367375fdc0a89d3293e1f3199e116ced67eea13",
+          "characters": 276,
+          "pending_characters": 0
+        },
+        "cancel": null,
+        "checks": {
+          "ready_binding": true,
+          "sequence_and_prefix": true,
+          "sent_audio_progress_and_device": true,
+          "window_within_30_seconds": true,
+          "capture_completed": true,
+          "normal_server_close": true,
+          "all_audio_acked": true,
+          "expected_event_counts": true,
+          "final_without_pending": true,
+          "nonempty_final": true,
+          "ack_lag_p95_within_target": true,
+          "realtime_fixed": true,
+          "realtime_pending": true,
+          "crossed_30_second_window": true
+        },
+        "thresholds": {
+          "ack_lag_p95_seconds": 2.0,
+          "capture_queue_items": 400,
+          "window_seconds": 30
+        },
+        "expected": {
+          "capture_seconds": 120,
+          "audio_samples": 1920000,
+          "audio_frames": 750,
+          "flushes": 2,
+          "finish": 1,
+          "cancel": 0
+        },
+        "input_audio": {
+          "sample_seconds": 10,
+          "sample_sha256": "d2568087659128ce6e5ceee18d2f17e6072b52e4124179540a9721ff3b1770b8",
+          "frame_samples": 2560,
+          "sample_rate": 16000
+        },
+        "ready_seconds": 0.011518,
+        "capture_stop": {
+          "at_seconds": 120.000888,
+          "sent_samples": 1917440,
+          "acked_samples": 1917440,
+          "queued_items": 1
+        },
+        "elapsed_seconds": 120.260807,
+        "audio": {
+          "captured_samples": 1920000,
+          "sent_samples": 1920000,
+          "acked_samples": 1920000,
+          "unsent_samples": 0,
+          "unacked_samples": 0,
+          "sent_pcm_sha256": "6bfa0b6a58b792a590312d39fae6c8a801c0aad48cb11813b05601f918b5eda3"
+        },
+        "text": {
+          "latest_sha256": "aca1425354a36b795c415a432367375fdc0a89d3293e1f3199e116ced67eea13",
+          "final_sha256": "aca1425354a36b795c415a432367375fdc0a89d3293e1f3199e116ced67eea13",
+          "characters": 276,
+          "pending_characters": 0,
+          "first_fixed_seconds": 8.124179,
+          "first_pending_seconds": 2.150595,
+          "live_fixed_updates": 40,
+          "live_pending_updates": 53
+        },
+        "stream_sha256": "a357199546cda01b8141434cd0360715b025e203901b8944beaf9ef3ab41a0d7",
+        "windows": {
+          "max_reported_seconds": 30.0,
+          "max_contiguous_audio_seconds": 40.0,
+          "crossed_30_second_window": true
+        },
+        "latency": {
+          "ack_lag_seconds": {
+            "count": 750,
+            "p50": 0.004304,
+            "p95": 0.115269,
+            "p99": 0.140698,
+            "max": 0.287722
+          },
+          "lag_early": {
+            "count": 250,
+            "p50": 0.004311,
+            "p95": 0.123137,
+            "p99": 0.144407,
+            "max": 0.287722
+          },
+          "lag_late": {
+            "count": 251,
+            "p50": 0.004332,
+            "p95": 0.115798,
+            "p99": 0.137575,
+            "max": 0.273258
+          },
+          "queue_delay_seconds": {
+            "count": 750,
+            "p50": 0.000123,
+            "p95": 0.000158,
+            "p99": 0.000404,
+            "max": 0.127888
+          },
+          "ack_roundtrip_seconds": {
+            "count": 750,
+            "p50": 0.004171,
+            "p95": 0.11475,
+            "p99": 0.140566,
+            "max": 0.28761
+          },
+          "audio_inference_ms": {
+            "count": 750,
+            "p50": 0.11,
+            "p95": 110.5205,
+            "p99": 136.1819,
+            "max": 283.42
+          },
+          "producer_schedule_lag_seconds": {
+            "count": 750,
+            "p50": 0.000853,
+            "p95": 0.001358,
+            "p99": 0.002042,
+            "max": 0.00751
+          },
+          "qwen_2s_boundary_ack_lag_seconds": {
+            "count": 60,
+            "p50": 0.117367,
+            "p95": 0.229238,
+            "p99": 0.279188,
+            "max": 0.287722
+          },
+          "qwen_2s_boundary_inference_ms": {
+            "count": 60,
+            "p50": 113.13,
+            "p95": 225.311,
+            "p99": 274.4815,
+            "max": 283.42
+          },
+          "late_minus_early_p95_seconds": -0.007339
+        }
+      },
+      "cancel": {
+        "schema_version": 1,
+        "protocol": "qwen-legacy-request-reply",
+        "passed": true,
+        "failure": null,
+        "event_counts": {
+          "captured_audio": 50,
+          "audio_sent": 49,
+          "audio_acked": 49,
+          "flush_sent": 0,
+          "flush_acked": 0,
+          "finish_sent": 0,
+          "finish_acked": 0,
+          "cancel_sent": 1,
+          "ready": 1,
+          "partial": 49,
+          "final": 0,
+          "error": 0,
+          "other": 0,
+          "total_received": 50,
+          "fixed_updates": 0,
+          "pending_updates": 3,
+          "qwen_2s_boundary_acks": 3,
+          "max_queue": 1
+        },
+        "ready_binding": {
+          "mode": "qwen-stream",
+          "request_id": "f1567ec7-d492-4ae0-8e7a-52e566d4354c"
+        },
+        "close": {
+          "observed_before_cleanup": true,
+          "code": 1000,
+          "cleanup_completed": true
+        },
+        "flushes": [],
+        "finish": null,
+        "cancel": {
+          "requested_at_seconds": 8.000809,
+          "sent_at_seconds": 8.001191,
+          "close_latency_seconds": 0.002768,
+          "final_received": false
+        },
+        "checks": {
+          "ready_binding": true,
+          "sequence_and_prefix": true,
+          "sent_audio_progress_and_device": true,
+          "window_within_30_seconds": true,
+          "capture_completed": true,
+          "normal_server_close": true,
+          "cancel_sent": true,
+          "actual_audio_acked": true,
+          "cancelled_without_final": true
+        },
+        "thresholds": {
+          "ack_lag_p95_seconds": 2.0,
+          "capture_queue_items": 400,
+          "window_seconds": 30
+        },
+        "expected": {
+          "capture_seconds": 8,
+          "audio_samples": 128000,
+          "audio_frames": 50,
+          "flushes": 0,
+          "finish": 0,
+          "cancel": 1
+        },
+        "input_audio": {
+          "sample_seconds": 10,
+          "sample_sha256": "d2568087659128ce6e5ceee18d2f17e6072b52e4124179540a9721ff3b1770b8",
+          "frame_samples": 2560,
+          "sample_rate": 16000
+        },
+        "ready_seconds": 0.007419,
+        "capture_stop": {
+          "at_seconds": 8.000792,
+          "sent_samples": 125440,
+          "acked_samples": 125440,
+          "queued_items": 1
+        },
+        "elapsed_seconds": 8.011708,
+        "audio": {
+          "captured_samples": 128000,
+          "sent_samples": 125440,
+          "acked_samples": 125440,
+          "unsent_samples": 2560,
+          "unacked_samples": 0,
+          "sent_pcm_sha256": "1f8796708600f84bd74426f64d79bb3201c592629f636cdbaf67935ca8a316ab"
+        },
+        "text": {
+          "latest_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "final_sha256": null,
+          "characters": 0,
+          "pending_characters": 13,
+          "first_fixed_seconds": null,
+          "first_pending_seconds": 2.157823,
+          "live_fixed_updates": 0,
+          "live_pending_updates": 3
+        },
+        "stream_sha256": "a0e2f562c5438dca5ca515846a91026fab65d322fb49c951deef8a4eb75ca690",
+        "windows": {
+          "max_reported_seconds": 6.0,
+          "max_contiguous_audio_seconds": 7.84,
+          "crossed_30_second_window": false
+        },
+        "latency": {
+          "ack_lag_seconds": {
+            "count": 49,
+            "p50": 0.004221,
+            "p95": 0.04813,
+            "p99": 0.09828,
+            "max": 0.117322
+          },
+          "lag_early": {
+            "count": 16,
+            "p50": 0.004388,
+            "p95": 0.023059,
+            "p99": 0.066038,
+            "max": 0.076782
+          },
+          "lag_late": {
+            "count": 16,
+            "p50": 0.004243,
+            "p95": 0.03276,
+            "p99": 0.100409,
+            "max": 0.117322
+          },
+          "queue_delay_seconds": {
+            "count": 49,
+            "p50": 0.000124,
+            "p95": 0.000154,
+            "p99": 0.000165,
+            "max": 0.000169
+          },
+          "ack_roundtrip_seconds": {
+            "count": 49,
+            "p50": 0.004102,
+            "p95": 0.047975,
+            "p99": 0.098163,
+            "max": 0.117189
+          },
+          "audio_inference_ms": {
+            "count": 49,
+            "p50": 0.11,
+            "p95": 42.87,
+            "p99": 93.9372,
+            "max": 112.59
+          },
+          "producer_schedule_lag_seconds": {
+            "count": 50,
+            "p50": 0.000832,
+            "p95": 0.00132,
+            "p99": 0.001887,
+            "max": 0.002005
+          },
+          "qwen_2s_boundary_ack_lag_seconds": {
+            "count": 3,
+            "p50": 0.077651,
+            "p95": 0.113355,
+            "p99": 0.116529,
+            "max": 0.117322
+          },
+          "qwen_2s_boundary_inference_ms": {
+            "count": 3,
+            "p50": 73.73,
+            "p95": 108.704,
+            "p99": 111.8128,
+            "max": 112.59
+          },
+          "late_minus_early_p95_seconds": 0.009701
+        }
+      },
+      "after_cancel": {
+        "schema_version": 1,
+        "protocol": "qwen-legacy-request-reply",
+        "passed": true,
+        "failure": null,
+        "event_counts": {
+          "captured_audio": 75,
+          "audio_sent": 75,
+          "audio_acked": 75,
+          "flush_sent": 0,
+          "flush_acked": 0,
+          "finish_sent": 1,
+          "finish_acked": 1,
+          "cancel_sent": 0,
+          "ready": 1,
+          "partial": 75,
+          "final": 1,
+          "error": 0,
+          "other": 0,
+          "total_received": 77,
+          "fixed_updates": 4,
+          "pending_updates": 6,
+          "qwen_2s_boundary_acks": 6,
+          "max_queue": 2
+        },
+        "ready_binding": {
+          "mode": "qwen-stream",
+          "request_id": "9862658a-a229-4b21-b264-3c33ad5f0b36"
+        },
+        "close": {
+          "observed_before_cleanup": true,
+          "code": 1000,
+          "cleanup_completed": true
+        },
+        "flushes": [],
+        "finish": {
+          "sent_at_seconds": 12.12035,
+          "reply_at_seconds": 12.226952,
+          "roundtrip_seconds": 0.106602,
+          "queue_delay_seconds": 0.119122,
+          "audio_seconds": 12.0,
+          "inference_ms": 104.16,
+          "text_sha256": "d149f74313d40b22133ebb2db5fa7b90d9f9807a07e85e721eeb401bec6d83b2",
+          "characters": 23,
+          "pending_characters": 0
+        },
+        "cancel": null,
+        "checks": {
+          "ready_binding": true,
+          "sequence_and_prefix": true,
+          "sent_audio_progress_and_device": true,
+          "window_within_30_seconds": true,
+          "capture_completed": true,
+          "normal_server_close": true,
+          "all_audio_acked": true,
+          "expected_event_counts": true,
+          "final_without_pending": true,
+          "nonempty_final": true
+        },
+        "thresholds": {
+          "ack_lag_p95_seconds": 2.0,
+          "capture_queue_items": 400,
+          "window_seconds": 30
+        },
+        "expected": {
+          "capture_seconds": 12,
+          "audio_samples": 192000,
+          "audio_frames": 75,
+          "flushes": 0,
+          "finish": 1,
+          "cancel": 0
+        },
+        "input_audio": {
+          "sample_seconds": 10,
+          "sample_sha256": "d2568087659128ce6e5ceee18d2f17e6072b52e4124179540a9721ff3b1770b8",
+          "frame_samples": 2560,
+          "sample_rate": 16000
+        },
+        "ready_seconds": 0.023287,
+        "capture_stop": {
+          "at_seconds": 12.001211,
+          "sent_samples": 189440,
+          "acked_samples": 189440,
+          "queued_items": 1
+        },
+        "elapsed_seconds": 12.292687,
+        "audio": {
+          "captured_samples": 192000,
+          "sent_samples": 192000,
+          "acked_samples": 192000,
+          "unsent_samples": 0,
+          "unacked_samples": 0,
+          "sent_pcm_sha256": "3391d06c4e55d2d554bfdc4f742bebc534324e27979aac0158d6985b441eed92"
+        },
+        "text": {
+          "latest_sha256": "d149f74313d40b22133ebb2db5fa7b90d9f9807a07e85e721eeb401bec6d83b2",
+          "final_sha256": "d149f74313d40b22133ebb2db5fa7b90d9f9807a07e85e721eeb401bec6d83b2",
+          "characters": 23,
+          "pending_characters": 0,
+          "first_fixed_seconds": 8.113975,
+          "first_pending_seconds": 2.14836,
+          "live_fixed_updates": 2,
+          "live_pending_updates": 5
+        },
+        "stream_sha256": "d2f658e9f47a38b400c63c514e1b7e128ea7957dec1e7c123981a80d3ef3080f",
+        "windows": {
+          "max_reported_seconds": 12.0,
+          "max_contiguous_audio_seconds": 12.0,
+          "crossed_30_second_window": false
+        },
+        "latency": {
+          "ack_lag_seconds": {
+            "count": 75,
+            "p50": 0.004403,
+            "p95": 0.095113,
+            "p99": 0.121876,
+            "max": 0.130304
+          },
+          "lag_early": {
+            "count": 25,
+            "p50": 0.00419,
+            "p95": 0.055415,
+            "p99": 0.083118,
+            "max": 0.087918
+          },
+          "lag_late": {
+            "count": 26,
+            "p50": 0.004484,
+            "p95": 0.117161,
+            "p99": 0.127456,
+            "max": 0.130304
+          },
+          "queue_delay_seconds": {
+            "count": 75,
+            "p50": 0.000124,
+            "p95": 0.000139,
+            "p99": 0.000195,
+            "max": 0.000317
+          },
+          "ack_roundtrip_seconds": {
+            "count": 75,
+            "p50": 0.004277,
+            "p95": 0.09498,
+            "p99": 0.121764,
+            "max": 0.130201
+          },
+          "audio_inference_ms": {
+            "count": 75,
+            "p50": 0.11,
+            "p95": 90.239,
+            "p99": 116.9596,
+            "max": 126.18
+          },
+          "producer_schedule_lag_seconds": {
+            "count": 75,
+            "p50": 0.000929,
+            "p95": 0.001579,
+            "p99": 0.002023,
+            "max": 0.002051
+          },
+          "qwen_2s_boundary_ack_lag_seconds": {
+            "count": 6,
+            "p50": 0.113479,
+            "p95": 0.127457,
+            "p99": 0.129735,
+            "max": 0.130304
+          },
+          "qwen_2s_boundary_inference_ms": {
+            "count": 6,
+            "p50": 108.765,
+            "p95": 123.065,
+            "p99": 125.557,
+            "max": 126.18
+          },
+          "late_minus_early_p95_seconds": 0.061746
+        }
+      }
+    }
+  ],
+  "release": {
+    "passed": true,
+    "revision": "2c5f4277afea4b0aa899f906317c620ddff4e23a",
+    "deployed": true,
+    "loaded": {
+      "state": "ready",
+      "mode": "qwen-stream",
+      "device": "cuda:0",
+      "worker_pid": 31960,
+      "model_generation": "787d19a70fe64784821b53ab31fa2b6a",
+      "max_sessions": 2
+    },
+    "worker_environment": {
+      "TOKENIZERS_PARALLELISM": "false",
+      "OMP_NUM_THREADS": "4",
+      "OMP_WAIT_POLICY": "PASSIVE"
+    },
+    "main": {
+      "passed": true,
+      "report_sha256": "5103fce3246cd205152d2ae0a2cdcd5e3241ed86fc77ddd033ca3704384511aa",
+      "cpu": {
+        "valid": true,
+        "core_processes_preserved": true,
+        "scope": "production_voice_service_cgroup_and_descendants",
+        "window": "real_clock_protocol_case_excluding_model_load",
+        "wall_seconds": 120.26837463999982,
+        "usage_seconds": 19.302497,
+        "user_seconds": 16.048479,
+        "system_seconds": 3.254019,
+        "mean_cores": 0.1604952013177055,
+        "matched_process_cpu_seconds_by_role": {
+          "api": 1.92,
+          "worker": 4.680000000000003,
+          "auxiliary": 0.0,
+          "engine": 12.71
+        },
+        "before": {
+          "monotonic": 182999.223218193,
+          "cpu_usec": {
+            "usage_usec": 71458421,
+            "user_usec": 63821419,
+            "system_usec": 7637001
+          },
+          "processes": [
+            {
+              "pid": 29785,
+              "role": "api",
+              "start_ticks": 18289137,
+              "cpu_seconds": 1.31,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false"
+              }
+            },
+            {
+              "pid": 31960,
+              "role": "worker",
+              "start_ticks": 18293509,
+              "cpu_seconds": 29.45,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false",
+                "OMP_NUM_THREADS": "4",
+                "OMP_WAIT_POLICY": "PASSIVE"
+              }
+            },
+            {
+              "pid": 33911,
+              "role": "auxiliary",
+              "start_ticks": 18295633,
+              "cpu_seconds": 0.04,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false",
+                "OMP_NUM_THREADS": "4",
+                "OMP_WAIT_POLICY": "PASSIVE"
+              }
+            },
+            {
+              "pid": 33912,
+              "role": "engine",
+              "start_ticks": 18295633,
+              "cpu_seconds": 39.26,
+              "thread_environment": {}
+            }
+          ]
+        },
+        "after": {
+          "monotonic": 183119.491592833,
+          "cpu_usec": {
+            "usage_usec": 90760918,
+            "user_usec": 79869898,
+            "system_usec": 10891020
+          },
+          "processes": [
+            {
+              "pid": 29785,
+              "role": "api",
+              "start_ticks": 18289137,
+              "cpu_seconds": 3.23,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false"
+              }
+            },
+            {
+              "pid": 31960,
+              "role": "worker",
+              "start_ticks": 18293509,
+              "cpu_seconds": 34.13,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false",
+                "OMP_NUM_THREADS": "4",
+                "OMP_WAIT_POLICY": "PASSIVE"
+              }
+            },
+            {
+              "pid": 33911,
+              "role": "auxiliary",
+              "start_ticks": 18295633,
+              "cpu_seconds": 0.04,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false",
+                "OMP_NUM_THREADS": "4",
+                "OMP_WAIT_POLICY": "PASSIVE"
+              }
+            },
+            {
+              "pid": 33912,
+              "role": "engine",
+              "start_ticks": 18295633,
+              "cpu_seconds": 51.97,
+              "thread_environment": {}
+            }
+          ]
+        }
+      },
+      "case": {
+        "schema_version": 1,
+        "protocol": "qwen-legacy-request-reply",
+        "passed": true,
+        "failure": null,
+        "event_counts": {
+          "captured_audio": 750,
+          "audio_sent": 750,
+          "audio_acked": 750,
+          "flush_sent": 2,
+          "flush_acked": 2,
+          "finish_sent": 1,
+          "finish_acked": 1,
+          "cancel_sent": 0,
+          "ready": 1,
+          "partial": 752,
+          "final": 1,
+          "error": 0,
+          "other": 0,
+          "total_received": 754,
+          "fixed_updates": 42,
+          "pending_updates": 54,
+          "qwen_2s_boundary_acks": 60,
+          "max_queue": 3
+        },
+        "ready_binding": {
+          "mode": "qwen-stream",
+          "request_id": "a90ba436-288c-4793-b7a7-3bb781e7bfcb"
+        },
+        "close": {
+          "observed_before_cleanup": true,
+          "code": 1000,
+          "cleanup_completed": true
+        },
+        "flushes": [
+          {
+            "sent_at_seconds": 40.134785,
+            "reply_at_seconds": 40.240282,
+            "roundtrip_seconds": 0.105497,
+            "queue_delay_seconds": 0.133884,
+            "audio_seconds": 40.0,
+            "inference_ms": 103.26,
+            "text_sha256": "2193de45a752f1196704e2fc180f2230647b15c847108e76425b63e1d56a62d9",
+            "characters": 92,
+            "pending_characters": 0,
+            "scheduled_audio_seconds": 40
+          },
+          {
+            "sent_at_seconds": 80.118476,
+            "reply_at_seconds": 80.21239,
+            "roundtrip_seconds": 0.093914,
+            "queue_delay_seconds": 0.118288,
+            "audio_seconds": 80.0,
+            "inference_ms": 91.23,
+            "text_sha256": "79d5e48462b3535f14d817c9e97e5a32d5aeb4bc194a4dfcb6795c0b708be03e",
+            "characters": 184,
+            "pending_characters": 0,
+            "scheduled_audio_seconds": 80
+          }
+        ],
+        "finish": {
+          "sent_at_seconds": 120.113184,
+          "reply_at_seconds": 120.209384,
+          "roundtrip_seconds": 0.0962,
+          "queue_delay_seconds": 0.112462,
+          "audio_seconds": 120.0,
+          "inference_ms": 93.45,
+          "text_sha256": "aca1425354a36b795c415a432367375fdc0a89d3293e1f3199e116ced67eea13",
+          "characters": 276,
+          "pending_characters": 0
+        },
+        "cancel": null,
+        "checks": {
+          "ready_binding": true,
+          "sequence_and_prefix": true,
+          "sent_audio_progress_and_device": true,
+          "window_within_30_seconds": true,
+          "capture_completed": true,
+          "normal_server_close": true,
+          "all_audio_acked": true,
+          "expected_event_counts": true,
+          "final_without_pending": true,
+          "nonempty_final": true,
+          "ack_lag_p95_within_target": true,
+          "realtime_fixed": true,
+          "realtime_pending": true,
+          "crossed_30_second_window": true
+        },
+        "thresholds": {
+          "ack_lag_p95_seconds": 2.0,
+          "capture_queue_items": 400,
+          "window_seconds": 30
+        },
+        "expected": {
+          "capture_seconds": 120,
+          "audio_samples": 1920000,
+          "audio_frames": 750,
+          "flushes": 2,
+          "finish": 1,
+          "cancel": 0
+        },
+        "input_audio": {
+          "sample_seconds": 10,
+          "sample_sha256": "d2568087659128ce6e5ceee18d2f17e6072b52e4124179540a9721ff3b1770b8",
+          "frame_samples": 2560,
+          "sample_rate": 16000
+        },
+        "ready_seconds": 0.011966,
+        "capture_stop": {
+          "at_seconds": 120.0007,
+          "sent_samples": 1917440,
+          "acked_samples": 1917440,
+          "queued_items": 1
+        },
+        "elapsed_seconds": 120.265125,
+        "audio": {
+          "captured_samples": 1920000,
+          "sent_samples": 1920000,
+          "acked_samples": 1920000,
+          "unsent_samples": 0,
+          "unacked_samples": 0,
+          "sent_pcm_sha256": "6bfa0b6a58b792a590312d39fae6c8a801c0aad48cb11813b05601f918b5eda3"
+        },
+        "text": {
+          "latest_sha256": "aca1425354a36b795c415a432367375fdc0a89d3293e1f3199e116ced67eea13",
+          "final_sha256": "aca1425354a36b795c415a432367375fdc0a89d3293e1f3199e116ced67eea13",
+          "characters": 276,
+          "pending_characters": 0,
+          "first_fixed_seconds": 8.125195,
+          "first_pending_seconds": 2.150307,
+          "live_fixed_updates": 40,
+          "live_pending_updates": 53
+        },
+        "stream_sha256": "a357199546cda01b8141434cd0360715b025e203901b8944beaf9ef3ab41a0d7",
+        "windows": {
+          "max_reported_seconds": 30.0,
+          "max_contiguous_audio_seconds": 40.0,
+          "crossed_30_second_window": true
+        },
+        "latency": {
+          "ack_lag_seconds": {
+            "count": 750,
+            "p50": 0.004521,
+            "p95": 0.117936,
+            "p99": 0.208647,
+            "max": 0.572805
+          },
+          "lag_early": {
+            "count": 250,
+            "p50": 0.004515,
+            "p95": 0.136217,
+            "p99": 0.261696,
+            "max": 0.572805
+          },
+          "lag_late": {
+            "count": 251,
+            "p50": 0.004523,
+            "p95": 0.11354,
+            "p99": 0.133324,
+            "max": 0.231917
+          },
+          "queue_delay_seconds": {
+            "count": 750,
+            "p50": 0.000128,
+            "p95": 0.000179,
+            "p99": 0.06286,
+            "max": 0.412904
+          },
+          "ack_roundtrip_seconds": {
+            "count": 750,
+            "p50": 0.004371,
+            "p95": 0.116955,
+            "p99": 0.178346,
+            "max": 0.572673
+          },
+          "audio_inference_ms": {
+            "count": 750,
+            "p50": 0.12,
+            "p95": 112.7825,
+            "p99": 173.0417,
+            "max": 568.1
+          },
+          "producer_schedule_lag_seconds": {
+            "count": 750,
+            "p50": 0.000856,
+            "p95": 0.001362,
+            "p99": 0.002091,
+            "max": 0.003861
+          },
+          "qwen_2s_boundary_ack_lag_seconds": {
+            "count": 60,
+            "p50": 0.122321,
+            "p95": 0.233173,
+            "p99": 0.38978,
+            "max": 0.572805
+          },
+          "qwen_2s_boundary_inference_ms": {
+            "count": 60,
+            "p50": 118.075,
+            "p95": 227.7805,
+            "p99": 385.2767,
+            "max": 568.1
+          },
+          "late_minus_early_p95_seconds": -0.022677
+        }
+      },
+      "engine_wait_policy_directly_observed": false
+    },
+    "stream_matches_isolated_candidate": true,
+    "final_text_matches_isolated_candidate": true,
+    "cancel": {
+      "passed": true,
+      "report_sha256": "d6c75fa29da45c1b629ff3a572867eba421f30c9b39506bcb0b39232b18db666",
+      "cpu": {
+        "valid": true,
+        "core_processes_preserved": true,
+        "scope": "production_voice_service_cgroup_and_descendants",
+        "window": "real_clock_protocol_case_excluding_model_load",
+        "wall_seconds": 8.016902711999137,
+        "usage_seconds": 0.906262,
+        "user_seconds": 0.703944,
+        "system_seconds": 0.202318,
+        "mean_cores": 0.1130439064258034,
+        "matched_process_cpu_seconds_by_role": {
+          "api": 0.14000000000000012,
+          "worker": 0.17999999999999972,
+          "auxiliary": 0.0,
+          "engine": 0.5700000000000003
+        },
+        "before": {
+          "monotonic": 183119.554419085,
+          "cpu_usec": {
+            "usage_usec": 90768310,
+            "user_usec": 79875078,
+            "system_usec": 10893231
+          },
+          "processes": [
+            {
+              "pid": 29785,
+              "role": "api",
+              "start_ticks": 18289137,
+              "cpu_seconds": 3.23,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false"
+              }
+            },
+            {
+              "pid": 31960,
+              "role": "worker",
+              "start_ticks": 18293509,
+              "cpu_seconds": 34.13,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false",
+                "OMP_NUM_THREADS": "4",
+                "OMP_WAIT_POLICY": "PASSIVE"
+              }
+            },
+            {
+              "pid": 33911,
+              "role": "auxiliary",
+              "start_ticks": 18295633,
+              "cpu_seconds": 0.04,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false",
+                "OMP_NUM_THREADS": "4",
+                "OMP_WAIT_POLICY": "PASSIVE"
+              }
+            },
+            {
+              "pid": 33912,
+              "role": "engine",
+              "start_ticks": 18295633,
+              "cpu_seconds": 51.97,
+              "thread_environment": {}
+            }
+          ]
+        },
+        "after": {
+          "monotonic": 183127.571321797,
+          "cpu_usec": {
+            "usage_usec": 91674572,
+            "user_usec": 80579022,
+            "system_usec": 11095549
+          },
+          "processes": [
+            {
+              "pid": 29785,
+              "role": "api",
+              "start_ticks": 18289137,
+              "cpu_seconds": 3.37,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false"
+              }
+            },
+            {
+              "pid": 31960,
+              "role": "worker",
+              "start_ticks": 18293509,
+              "cpu_seconds": 34.31,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false",
+                "OMP_NUM_THREADS": "4",
+                "OMP_WAIT_POLICY": "PASSIVE"
+              }
+            },
+            {
+              "pid": 33911,
+              "role": "auxiliary",
+              "start_ticks": 18295633,
+              "cpu_seconds": 0.04,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false",
+                "OMP_NUM_THREADS": "4",
+                "OMP_WAIT_POLICY": "PASSIVE"
+              }
+            },
+            {
+              "pid": 33912,
+              "role": "engine",
+              "start_ticks": 18295633,
+              "cpu_seconds": 52.54,
+              "thread_environment": {}
+            }
+          ]
+        }
+      },
+      "case": {
+        "schema_version": 1,
+        "protocol": "qwen-legacy-request-reply",
+        "passed": true,
+        "failure": null,
+        "event_counts": {
+          "captured_audio": 50,
+          "audio_sent": 49,
+          "audio_acked": 49,
+          "flush_sent": 0,
+          "flush_acked": 0,
+          "finish_sent": 0,
+          "finish_acked": 0,
+          "cancel_sent": 1,
+          "ready": 1,
+          "partial": 49,
+          "final": 0,
+          "error": 0,
+          "other": 0,
+          "total_received": 50,
+          "fixed_updates": 0,
+          "pending_updates": 3,
+          "qwen_2s_boundary_acks": 3,
+          "max_queue": 1
+        },
+        "ready_binding": {
+          "mode": "qwen-stream",
+          "request_id": "2ca93f07-1929-44b6-8152-b0cb1c7d7ddc"
+        },
+        "close": {
+          "observed_before_cleanup": true,
+          "code": 1000,
+          "cleanup_completed": true
+        },
+        "flushes": [],
+        "finish": null,
+        "cancel": {
+          "requested_at_seconds": 8.001311,
+          "sent_at_seconds": 8.001766,
+          "close_latency_seconds": 0.003081,
+          "final_received": false
+        },
+        "checks": {
+          "ready_binding": true,
+          "sequence_and_prefix": true,
+          "sent_audio_progress_and_device": true,
+          "window_within_30_seconds": true,
+          "capture_completed": true,
+          "normal_server_close": true,
+          "cancel_sent": true,
+          "actual_audio_acked": true,
+          "cancelled_without_final": true
+        },
+        "thresholds": {
+          "ack_lag_p95_seconds": 2.0,
+          "capture_queue_items": 400,
+          "window_seconds": 30
+        },
+        "expected": {
+          "capture_seconds": 8,
+          "audio_samples": 128000,
+          "audio_frames": 50,
+          "flushes": 0,
+          "finish": 0,
+          "cancel": 1
+        },
+        "input_audio": {
+          "sample_seconds": 10,
+          "sample_sha256": "d2568087659128ce6e5ceee18d2f17e6072b52e4124179540a9721ff3b1770b8",
+          "frame_samples": 2560,
+          "sample_rate": 16000
+        },
+        "ready_seconds": 0.008669,
+        "capture_stop": {
+          "at_seconds": 8.001288,
+          "sent_samples": 125440,
+          "acked_samples": 125440,
+          "queued_items": 1
+        },
+        "elapsed_seconds": 8.013971,
+        "audio": {
+          "captured_samples": 128000,
+          "sent_samples": 125440,
+          "acked_samples": 125440,
+          "unsent_samples": 2560,
+          "unacked_samples": 0,
+          "sent_pcm_sha256": "1f8796708600f84bd74426f64d79bb3201c592629f636cdbaf67935ca8a316ab"
+        },
+        "text": {
+          "latest_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "final_sha256": null,
+          "characters": 0,
+          "pending_characters": 13,
+          "first_fixed_seconds": null,
+          "first_pending_seconds": 2.145937,
+          "live_fixed_updates": 0,
+          "live_pending_updates": 3
+        },
+        "stream_sha256": "a0e2f562c5438dca5ca515846a91026fab65d322fb49c951deef8a4eb75ca690",
+        "windows": {
+          "max_reported_seconds": 6.0,
+          "max_contiguous_audio_seconds": 7.84,
+          "crossed_30_second_window": false
+        },
+        "latency": {
+          "ack_lag_seconds": {
+            "count": 49,
+            "p50": 0.004655,
+            "p95": 0.041315,
+            "p99": 0.099379,
+            "max": 0.118302
+          },
+          "lag_early": {
+            "count": 16,
+            "p50": 0.004417,
+            "p95": 0.019952,
+            "p99": 0.056014,
+            "max": 0.065029
+          },
+          "lag_late": {
+            "count": 16,
+            "p50": 0.004777,
+            "p95": 0.033884,
+            "p99": 0.101419,
+            "max": 0.118302
+          },
+          "queue_delay_seconds": {
+            "count": 49,
+            "p50": 0.000127,
+            "p95": 0.000159,
+            "p99": 0.000214,
+            "max": 0.000261
+          },
+          "ack_roundtrip_seconds": {
+            "count": 49,
+            "p50": 0.004513,
+            "p95": 0.041184,
+            "p99": 0.099258,
+            "max": 0.118184
+          },
+          "audio_inference_ms": {
+            "count": 49,
+            "p50": 0.12,
+            "p95": 36.252,
+            "p99": 95.0888,
+            "max": 114.38
+          },
+          "producer_schedule_lag_seconds": {
+            "count": 50,
+            "p50": 0.000878,
+            "p95": 0.001677,
+            "p99": 0.002237,
+            "max": 0.002302
+          },
+          "qwen_2s_boundary_ack_lag_seconds": {
+            "count": 3,
+            "p50": 0.078879,
+            "p95": 0.11436,
+            "p99": 0.117514,
+            "max": 0.118302
+          },
+          "qwen_2s_boundary_inference_ms": {
+            "count": 3,
+            "p50": 74.19,
+            "p95": 110.361,
+            "p99": 113.5762,
+            "max": 114.38
+          },
+          "late_minus_early_p95_seconds": 0.013932
+        }
+      },
+      "engine_wait_policy_directly_observed": false
+    },
+    "after_cancel": {
+      "passed": true,
+      "report_sha256": "993642b95631dffa58f74a9e597ca80c7ca8e8693c8e1ea82f92418b015716f5",
+      "cpu": {
+        "valid": true,
+        "core_processes_preserved": true,
+        "scope": "production_voice_service_cgroup_and_descendants",
+        "window": "real_clock_protocol_case_excluding_model_load",
+        "wall_seconds": 12.294584076997126,
+        "usage_seconds": 1.887346,
+        "user_seconds": 1.486201,
+        "system_seconds": 0.401144,
+        "mean_cores": 0.1535103577461542,
+        "matched_process_cpu_seconds_by_role": {
+          "api": 0.21999999999999975,
+          "worker": 0.4099999999999966,
+          "auxiliary": 0.0,
+          "engine": 1.2700000000000031
+        },
+        "before": {
+          "monotonic": 183127.625657438,
+          "cpu_usec": {
+            "usage_usec": 91682923,
+            "user_usec": 80585168,
+            "system_usec": 11097755
+          },
+          "processes": [
+            {
+              "pid": 29785,
+              "role": "api",
+              "start_ticks": 18289137,
+              "cpu_seconds": 3.37,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false"
+              }
+            },
+            {
+              "pid": 31960,
+              "role": "worker",
+              "start_ticks": 18293509,
+              "cpu_seconds": 34.32,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false",
+                "OMP_NUM_THREADS": "4",
+                "OMP_WAIT_POLICY": "PASSIVE"
+              }
+            },
+            {
+              "pid": 33911,
+              "role": "auxiliary",
+              "start_ticks": 18295633,
+              "cpu_seconds": 0.04,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false",
+                "OMP_NUM_THREADS": "4",
+                "OMP_WAIT_POLICY": "PASSIVE"
+              }
+            },
+            {
+              "pid": 33912,
+              "role": "engine",
+              "start_ticks": 18295633,
+              "cpu_seconds": 52.54,
+              "thread_environment": {}
+            }
+          ]
+        },
+        "after": {
+          "monotonic": 183139.920241515,
+          "cpu_usec": {
+            "usage_usec": 93570269,
+            "user_usec": 82071369,
+            "system_usec": 11498899
+          },
+          "processes": [
+            {
+              "pid": 29785,
+              "role": "api",
+              "start_ticks": 18289137,
+              "cpu_seconds": 3.59,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false"
+              }
+            },
+            {
+              "pid": 31960,
+              "role": "worker",
+              "start_ticks": 18293509,
+              "cpu_seconds": 34.73,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false",
+                "OMP_NUM_THREADS": "4",
+                "OMP_WAIT_POLICY": "PASSIVE"
+              }
+            },
+            {
+              "pid": 33911,
+              "role": "auxiliary",
+              "start_ticks": 18295633,
+              "cpu_seconds": 0.04,
+              "thread_environment": {
+                "TOKENIZERS_PARALLELISM": "false",
+                "OMP_NUM_THREADS": "4",
+                "OMP_WAIT_POLICY": "PASSIVE"
+              }
+            },
+            {
+              "pid": 33912,
+              "role": "engine",
+              "start_ticks": 18295633,
+              "cpu_seconds": 53.81,
+              "thread_environment": {}
+            }
+          ]
+        }
+      },
+      "case": {
+        "schema_version": 1,
+        "protocol": "qwen-legacy-request-reply",
+        "passed": true,
+        "failure": null,
+        "event_counts": {
+          "captured_audio": 75,
+          "audio_sent": 75,
+          "audio_acked": 75,
+          "flush_sent": 0,
+          "flush_acked": 0,
+          "finish_sent": 1,
+          "finish_acked": 1,
+          "cancel_sent": 0,
+          "ready": 1,
+          "partial": 75,
+          "final": 1,
+          "error": 0,
+          "other": 0,
+          "total_received": 77,
+          "fixed_updates": 4,
+          "pending_updates": 6,
+          "qwen_2s_boundary_acks": 6,
+          "max_queue": 2
+        },
+        "ready_binding": {
+          "mode": "qwen-stream",
+          "request_id": "930a9107-6d4c-4a38-857d-c22deb4a3880"
+        },
+        "close": {
+          "observed_before_cleanup": true,
+          "code": 1000,
+          "cleanup_completed": true
+        },
+        "flushes": [],
+        "finish": {
+          "sent_at_seconds": 12.118161,
+          "reply_at_seconds": 12.242897,
+          "roundtrip_seconds": 0.124736,
+          "queue_delay_seconds": 0.117221,
+          "audio_seconds": 12.0,
+          "inference_ms": 122.09,
+          "text_sha256": "d149f74313d40b22133ebb2db5fa7b90d9f9807a07e85e721eeb401bec6d83b2",
+          "characters": 23,
+          "pending_characters": 0
+        },
+        "cancel": null,
+        "checks": {
+          "ready_binding": true,
+          "sequence_and_prefix": true,
+          "sent_audio_progress_and_device": true,
+          "window_within_30_seconds": true,
+          "capture_completed": true,
+          "normal_server_close": true,
+          "all_audio_acked": true,
+          "expected_event_counts": true,
+          "final_without_pending": true,
+          "nonempty_final": true
+        },
+        "thresholds": {
+          "ack_lag_p95_seconds": 2.0,
+          "capture_queue_items": 400,
+          "window_seconds": 30
+        },
+        "expected": {
+          "capture_seconds": 12,
+          "audio_samples": 192000,
+          "audio_frames": 75,
+          "flushes": 0,
+          "finish": 1,
+          "cancel": 0
+        },
+        "input_audio": {
+          "sample_seconds": 10,
+          "sample_sha256": "d2568087659128ce6e5ceee18d2f17e6072b52e4124179540a9721ff3b1770b8",
+          "frame_samples": 2560,
+          "sample_rate": 16000
+        },
+        "ready_seconds": 0.007478,
+        "capture_stop": {
+          "at_seconds": 12.000923,
+          "sent_samples": 189440,
+          "acked_samples": 189440,
+          "queued_items": 1
+        },
+        "elapsed_seconds": 12.292274,
+        "audio": {
+          "captured_samples": 192000,
+          "sent_samples": 192000,
+          "acked_samples": 192000,
+          "unsent_samples": 0,
+          "unacked_samples": 0,
+          "sent_pcm_sha256": "3391d06c4e55d2d554bfdc4f742bebc534324e27979aac0158d6985b441eed92"
+        },
+        "text": {
+          "latest_sha256": "d149f74313d40b22133ebb2db5fa7b90d9f9807a07e85e721eeb401bec6d83b2",
+          "final_sha256": "d149f74313d40b22133ebb2db5fa7b90d9f9807a07e85e721eeb401bec6d83b2",
+          "characters": 23,
+          "pending_characters": 0,
+          "first_fixed_seconds": 8.117099,
+          "first_pending_seconds": 2.156315,
+          "live_fixed_updates": 2,
+          "live_pending_updates": 5
+        },
+        "stream_sha256": "d2f658e9f47a38b400c63c514e1b7e128ea7957dec1e7c123981a80d3ef3080f",
+        "windows": {
+          "max_reported_seconds": 12.0,
+          "max_contiguous_audio_seconds": 12.0,
+          "crossed_30_second_window": false
+        },
+        "latency": {
+          "ack_lag_seconds": {
+            "count": 75,
+            "p50": 0.004678,
+            "p95": 0.089679,
+            "p99": 0.11828,
+            "max": 0.120336
+          },
+          "lag_early": {
+            "count": 25,
+            "p50": 0.004363,
+            "p95": 0.061039,
+            "p99": 0.077413,
+            "max": 0.078146
+          },
+          "lag_late": {
+            "count": 26,
+            "p50": 0.005129,
+            "p95": 0.116883,
+            "p99": 0.119497,
+            "max": 0.120336
+          },
+          "queue_delay_seconds": {
+            "count": 75,
+            "p50": 0.000131,
+            "p95": 0.00017,
+            "p99": 0.000232,
+            "max": 0.000356
+          },
+          "ack_roundtrip_seconds": {
+            "count": 75,
+            "p50": 0.004533,
+            "p95": 0.089542,
+            "p99": 0.118168,
+            "max": 0.120183
+          },
+          "audio_inference_ms": {
+            "count": 75,
+            "p50": 0.12,
+            "p95": 84.599,
+            "p99": 114.0856,
+            "max": 115.61
+          },
+          "producer_schedule_lag_seconds": {
+            "count": 75,
+            "p50": 0.000867,
+            "p95": 0.001663,
+            "p99": 0.001974,
+            "max": 0.002105
+          },
+          "qwen_2s_boundary_ack_lag_seconds": {
+            "count": 6,
+            "p50": 0.116784,
+            "p95": 0.119641,
+            "p99": 0.120197,
+            "max": 0.120336
+          },
+          "qwen_2s_boundary_inference_ms": {
+            "count": 6,
+            "p50": 111.635,
+            "p95": 115.095,
+            "p99": 115.507,
+            "max": 115.61
+          },
+          "late_minus_early_p95_seconds": 0.055844
+        }
+      },
+      "engine_wait_policy_directly_observed": false
+    },
+    "worker_preserved": true,
+    "model_preserved": true,
+    "final": {
+      "state": "ready",
+      "mode": "qwen-stream",
+      "device": "cuda:0",
+      "worker_pid": 31960,
+      "max_sessions": 2,
+      "active_sessions": []
+    },
+    "config_unchanged": {
+      "desktop.json": true,
+      "model-policy.json": true,
+      "mobile-listener.json": true
+    },
+    "vplus_unchanged": true,
+    "desktop_tray_unchanged": true,
+    "vplus_health_status": 200
+  },
+  "deployment_provenance": {
+    "revision": "2c5f4277afea4b0aa899f906317c620ddff4e23a",
+    "source_sha256": {
+      "oneaxe_voice/engines.py": "c4b21d0f22c3ac723d89a6dc544286e24a4f26d42c7f5a94d08158be33497492",
+      "oneaxe_voice/stream_worker.py": "0ed7092d3827aeaf14c7d9c46ee505b50ac64909ea0b6ef2bed20c8423fded64",
+      "tests/e2e_qwen_wait.py": "d4ec92117411d9585267c57e244fc0e9c6dbc350a0a1bacc66a8db57422086b9",
+      "tests/run_qwen_wait_profile.py": "ed2281193e5d7be16cce17684f29b9c83a04d849e69b487f00babf93173f460f",
+      "tests/wait_profile_support.py": "092f9cc48898323e382a293ed93a7714a39036c1c73c5522ab25d59008775f9f",
+      "tests/test_worker_environment.py": "cae0eb9ffb77163dcec7c9a358dd4f5f6adefa2b565dc24fb9f5ad585b613c5e",
+      "work/qwen-passive-release/regress.py": "14e9e8c84c7048325295eb8e0495c2605307a17c20d6cf730f42eaa830e0d362"
+    },
+    "reference_profile_sha256": "30f5603f5a915b8367a77cb92256efd34631fe53e25826d223cd6e34ae32e97c",
+    "matches_candidate_source": true,
+    "api_pid": 29785,
+    "api_cwd_matches_checkout": true
+  },
+  "limits": [
+    "Each A/B configuration ran one 120-second controlled Chinese input; these figures are not an all-audio average or a new ten-minute soak test.",
+    "The CPU metric includes the API service cgroup and descendants, not feature extraction alone, and excludes model loading, client and monitor work.",
+    "Wait policy changes no decoding, punctuation, model weights, feature devices, Qwen concurrency or stability horizon.",
+    "Worker PASSIVE was observed directly; EngineCore proc environment is overwritten by process naming, so inheritance is not claimed as directly measured.",
+    "Qwen cancellation normally closes the legacy WebSocket without a final; queued audio may be intentionally discarded.",
+    "Protocol regression does not replace a fresh microphone, desktop-paste, tmux or cross-network test."
+  ],
+  "sources_sha256": {
+    "work/qwen-passive-release/study/comparison.json": "5ba74a93457c8b98b2030b4bf5ba88f50e3dcc2b325a0f5ce7b20b21a39d6c7c",
+    "work/qwen-passive-release/study/cpu-tests.log": "d741b5fb91511b0ed1eb1636a30e7f9d3dabc8e99b24557b69ae1a0fbcb39a5b",
+    "work/qwen-passive-release/study/plan-before.json": "672d6b8c72ac7379cc6661dc51ed382166e12d21657c6e5d801e68d9f041d817",
+    "work/qwen-passive-release/study/qwen-default-20261003.json": "5e01ca8aa3c4b74986e6f5c7b5795235180a865a6d7b3022872a6da54d1bfc2a",
+    "work/qwen-passive-release/study/qwen-passive-20261003.json": "30f5603f5a915b8367a77cb92256efd34631fe53e25826d223cd6e34ae32e97c",
+    "work/qwen-passive-release/release.json": "eb3ae5cd1c481a78b18d133669d46361f9946c8d6856b2db12c1a492b34dfcaa",
+    "work/qwen-passive-release/before.json": "ecbf4c192b60723e5214e802e787de1bb3ded2899eaa23134f0ad9d9198d78ec",
+    "work/qwen-passive-release/provenance.json": "7a558a196308c752cdd3ebd15efed4cc6c856137af26e7f5541bc3340cc9148d",
+    "work/qwen-passive-release/main.json": "5103fce3246cd205152d2ae0a2cdcd5e3241ed86fc77ddd033ca3704384511aa",
+    "work/qwen-passive-release/cancel.json": "d6c75fa29da45c1b629ff3a572867eba421f30c9b39506bcb0b39232b18db666",
+    "work/qwen-passive-release/after_cancel.json": "993642b95631dffa58f74a9e597ca80c7ca8e8693c8e1ea82f92418b015716f5",
+    "work/qwen-passive-release/regress.py": "14e9e8c84c7048325295eb8e0495c2605307a17c20d6cf730f42eaa830e0d362",
+    "work/qwen-passive-release/build_evidence.py": "075fdb202efdcb7391135d26eb10f6928a9b0a4593ab71217bdc6f0a0df88e4c"
+  }
+}
