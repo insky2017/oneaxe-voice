@@ -162,8 +162,9 @@ def performance_evidence(metrics, args):
         checks["final_processed_all_audio"] = metrics["processed_samples"] == metrics["sent_samples"]
         checks["complete_final"] = metrics.get("complete") is True
     else:
-        checks["cancelled_without_success"] = (metrics.get("complete") is not True and
-                                                metrics.get("final_reason", "cancelled") == "cancelled")
+        checks["cancelled_without_success"] = (metrics.get("complete") is False and
+                                                metrics.get("final_reason") == "cancelled" and
+                                                isinstance(metrics.get("final_at_seconds"), (int, float)))
     return {"passed": all(checks.values()), "checks": checks,
             "late_minus_early_p95_seconds": round(growth, 4) if growth is not None else None}
 
