@@ -63,12 +63,19 @@ class CapacityTests(unittest.TestCase):
                 output.writeframes(b"\x01\x00" * 16000)
             (root / "pc.token").write_text("pc-secret")
             (root / "phone.token").write_text("phone-secret")
+            (root / "second-phone.token").write_text("second-phone-secret")
             rows = [{"role": "pc", "token_file": "pc.token", "audio_file": "test.wav"},
                     {"role": "mobile", "token_file": "phone.token", "audio_file": "test.wav", "offset": .16}]
             path = root / "manifest.json"
             path.write_text(json.dumps({"streams": rows}))
             streams, admin = load_manifest(path)
             self.assertEqual(streams[1]["offset_samples"], 2560)
+            self.assertEqual(admin, "pc-secret")
+            rows.append({"role": "mobile", "token_file": "second-phone.token", "audio_file": "test.wav"})
+            path.write_text(json.dumps({"streams": rows}))
+            streams, admin = load_manifest(path)
+            self.assertEqual(len(streams), 3)
+            self.assertEqual(len({row["token"] for row in streams}), 3)
             self.assertEqual(admin, "pc-secret")
             (root / "phone.token").write_text("pc-secret")
             with self.assertRaisesRegex(EvidenceError, "INDEPENDENT_TOKENS"):

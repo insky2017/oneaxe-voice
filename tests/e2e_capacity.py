@@ -67,7 +67,7 @@ def validate_url(value):
 def load_manifest(path):
     raw = json.loads(path.read_text())
     require(isinstance(raw, dict) and isinstance(raw.get("streams"), list), "INVALID_MANIFEST")
-    require(len(raw["streams"]) in {1, 2, 4, 6, 8}, "UNSUPPORTED_STREAM_COUNT")
+    require(len(raw["streams"]) in {1, 2, 3, 4, 6, 8}, "UNSUPPORTED_STREAM_COUNT")
     streams, names, token_paths, tokens = [], set(), set(), set()
     for index, row in enumerate(raw["streams"]):
         require(isinstance(row, dict), "INVALID_STREAM")

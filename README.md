@@ -61,7 +61,7 @@ R2T2 使用一份 GPU 权重和独立会话状态，支持 **1 路 PC + 1 路手
 - [移动接口 V1](docs/mobile-api-v1.md) · [移动入口部署](docs/mobile-deployment.md)
 - [R2T2 并发研究](docs/concurrency-research-2026-10-02.md)
 - [超过两路的接入与容量研究](docs/multi-stream-capacity-research-2026-10-02.md)：4090 显存核算、速度瓶颈与逐级验证方案；生产仍为两路。
-- [多路候选与隔离实验记录](docs/multi-stream-experiment-2026-10-02.md)：本分支改动、测速门槛和实际实验进度；尚未扩容生产。
+- [多路候选与隔离实验记录](docs/multi-stream-experiment-2026-10-02.md)：两路基线、三路退化、四路积压保护及实测曲线；未扩容生产。
 - [验证记录](docs/validation.md)
 - [实施计划](docs/plan.md)
 
