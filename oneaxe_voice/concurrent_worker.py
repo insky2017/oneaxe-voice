@@ -97,11 +97,13 @@ class ConcurrentSessions:
             try:
                 async with entry.lock:
                     entry.decoder._check()
+                    started = time.monotonic()
                     if entry.finished:
                         if op == "finish":
-                            return {**response, "ok": True, **entry.decoder.result(), "inference_ms": 0}
+                            entry.decoder.reset_metrics("finish")
+                            return {**response, "ok": True, **entry.decoder.result(), "inference_ms": 0,
+                                    "queued_at": received, "queue_ms": round((started - received) * 1000, 3)}
                         raise SessionCancelled("Session finished")
-                    started = time.monotonic()
                     entry.active = asyncio.current_task()
                     try:
                         if op == "audio":
@@ -149,12 +151,18 @@ def engine_configuration(model_dir):
     cache = int(os.environ.get("ONEAXE_VOICE_STREAM_KV_CACHE_BYTES", str(1024**3)))
     if not 2 <= sequences <= 16 or cache < 512 * 1024**2:
         raise ValueError("Invalid streaming model capacity configuration")
+    capture_override = os.environ.get("ONEAXE_VOICE_STREAM_CUDAGRAPH_CAPTURE_SIZES")
+    capture_sizes = (list(range(1, sequences + 1)) if capture_override is None else
+                     [int(value) for value in capture_override.split(",")])
+    if (not capture_sizes or len(set(capture_sizes)) != len(capture_sizes) or
+            any(size < 1 or size > sequences for size in capture_sizes)):
+        raise ValueError("Invalid streaming CUDA graph capture sizes")
     return {"model": str(model_dir), "dtype": "float16", "gpu_memory_utilization": .30,
             "kv_cache_memory_bytes": cache, "max_model_len": 4096, "max_num_seqs": sequences,
             "enforce_eager": False, "enable_prefix_caching": False, "mm_processor_cache_gb": 0,
             "enable_log_requests": False, "disable_log_stats": True,
             "compilation_config": {"mode": 0, "cudagraph_mode": "FULL_DECODE_ONLY",
-                                   "cudagraph_capture_sizes": [1, 2]}}
+                                   "cudagraph_capture_sizes": sorted(capture_sizes)}}
 
 
 async def load_model(model_dir):
@@ -184,14 +192,19 @@ async def load_model(model_dir):
                                   parse_language=parse_language_output, parse_output=parse_asr_output)
         samples = lambda count: SamplingParams(temperature=0.0, max_tokens=count, skip_special_tokens=True,
                                               output_kind=RequestOutputKind.FINAL_ONLY)
-        return AsyncR2T2Adapter(engine, official, helpers, samples), config["max_num_seqs"]
+        return AsyncR2T2Adapter(engine, official, helpers, samples,
+                               configuration=config), config["max_num_seqs"]
     except BaseException:
         engine.shutdown()
         raise
 
 
-async def warm_model(model):
+async def warm_model(model, *, capacity=2):
     import numpy as np
+
+    if not 2 <= capacity <= 16:
+        raise ValueError("Invalid streaming warmup capacity")
+    started = time.monotonic()
 
     async def warm(name, samples, tokens):
         state = model.init_streaming_state(language="Chinese", chunk_size_sec=.32,
@@ -202,8 +215,10 @@ async def warm_model(model):
         await model.generate(step, "warm:" + name)
 
     await warm("single", 5120, 4)
-    await asyncio.gather(warm("first-a", 5120, 4), warm("first-b", 5120, 4))
-    await asyncio.gather(warm("window-a", 16 * 16000, 2), warm("window-b", 16 * 16000, 2))
+    await asyncio.gather(*(warm(f"first-{index}", 5120, 4) for index in range(capacity)))
+    await asyncio.gather(*(warm(f"window-{index}", 16 * 16000, 2) for index in range(capacity)))
+    return {"capacity": capacity, "request_count": 1 + 2 * capacity,
+            "window_samples": 16 * 16000, "duration_ms": round((time.monotonic() - started) * 1000, 3)}
 
 
 async def serve(reader, writer, sessions):
@@ -266,9 +281,11 @@ async def run():
             raise ValueError("Concurrent worker only supports R2T2")
         with open(os.devnull, "w") as quiet, redirect_stdout(quiet):
             model, capacity = await load_model(model_dir)
-            await warm_model(model)
+            warmup = await warm_model(model, capacity=capacity)
+            effective_config = {key: value for key, value in model.configuration.items() if key != "model"}
             writer.write((json.dumps({"ready": True, "device": "cuda:0", "mode": mode,
-                                      "capacity": capacity}) + "\n").encode())
+                                      "capacity": capacity, "engine_config": effective_config,
+                                      "warmup": warmup}) + "\n").encode())
             await writer.drain()
             await serve(reader, writer, ConcurrentSessions(model, capacity=capacity))
     except Exception as exc:

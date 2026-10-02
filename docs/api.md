@@ -175,8 +175,13 @@ cd ~/tools/oneaxe-voice
 | `ONEAXE_VOICE_API_URL` | `http://127.0.0.1:8097` | 桌面控制器的 loopback API 地址，独立测试可换端口 |
 | `ONEAXE_VOICE_R2T2_MODEL_DIR` | `~/tools/models/Confucius4-R2T2` | R2T2 权重目录 |
 | `ONEAXE_VOICE_STREAM_PYTHON` | 项目下 `.venv-stream/bin/python` | 独立流式解释器 |
+| `ONEAXE_VOICE_STREAM_MAX_NUM_SEQS` | `2` | R2T2 总会话容量，整数 2–16；本分支同步约束 API/worker，1 路保留给 PC，远端每设备最多 1 路 |
+| `ONEAXE_VOICE_STREAM_KV_CACHE_BYTES` | `1073741824` | 显式 KV 池字节数，至少 512 MiB；扩容需配合实测，非整个 GPU 进程上限 |
+| `ONEAXE_VOICE_STREAM_CUDAGRAPH_CAPTURE_SIZES` | `1..N` | 逗号分隔的捕获大小，如 `1,2,3,4`；各值唯一且介于 1 和总容量 N 之间 |
 | `ONEAXE_VOICE_CUDA_DEVICE` | `0` | CUDA 设备索引 |
 | `ONEAXE_VOICE_MEMORY_FRACTION` | `0.25` | PyTorch 分配器显存比例上限 |
 | `ONEAXE_VOICE_IDLE_SECONDS` | `0` | 未保存菜单策略时的初始空闲阈值；`0` 表示常驻，保存的策略优先 |
 
 改变 runtime 目录时，服务和客户端必须使用相同配置，并在目标目录初始化令牌。服务预设 `HF_HUB_OFFLINE=1`、`TRANSFORMERS_OFFLINE=1`；本地 HTTP 客户端忽略代理环境变量。
+
+多路配置属于隔离实验候选，正式部署仍为两路。数值校验和模型预热成功不代表该档位已经通过持续实时性能验证；不能仅凭空闲显存增大生产容量。worker 上报的容量必须与服务配置一致，否则加载失败。R2T2 状态中的 `engine_config` 与 `warmup` 用于核对实际引擎配置和本次预热统计，不包含模型路径或凭据。

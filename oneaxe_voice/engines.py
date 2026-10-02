@@ -37,6 +37,7 @@ class Session:
     generation: str
     worker: object
     credential_id: str | None = None
+    device_id: str | None = None
     state: str = "active"
     terminal_reason: str | None = None
     result: dict = field(default_factory=lambda: {
@@ -51,6 +52,9 @@ class Worker:
         self.socket = None
         self.stream = None
         self.client = None
+        self.capacity = 1
+        self.engine_config = {}
+        self.warmup = {}
         interpreter = Path(os.environ.get("ONEAXE_VOICE_STREAM_PYTHON", ROOT / ".venv-stream/bin/python")).expanduser()
         if not interpreter.is_file():
             raise GPUError("流式环境尚未安装，请运行 bin/install-stream-env")
@@ -65,6 +69,7 @@ class Worker:
             parent.settimeout(240)
             self.stream = parent.makefile("rb")
         env = dict(os.environ, ONEAXE_WORKER_FD=str(child.fileno()),
+                   ONEAXE_VOICE_STREAM_MAX_NUM_SEQS=str(settings.stream_max_num_seqs),
                    CUDA_VISIBLE_DEVICES=str(settings.cuda_device),
                    HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", OMP_NUM_THREADS="4",
                    VLLM_WORKER_MULTIPROC_METHOD="spawn", TOKENIZERS_PARALLELISM="false")
@@ -80,7 +85,20 @@ class Worker:
                 )
             if mode == "r2t2":
                 self.client = WorkerClient(parent)
-                self.client.wait_ready()
+                ready = self.client.wait_ready()
+                self.capacity = _validated_capacity(ready.get("capacity"), settings)
+                self.engine_config = {key: ready["engine_config"][key] for key in (
+                    "max_num_seqs", "kv_cache_memory_bytes", "dtype", "max_model_len",
+                    "gpu_memory_utilization", "enforce_eager", "enable_prefix_caching",
+                    "mm_processor_cache_gb", "enable_log_requests", "disable_log_stats",
+                ) if key in ready.get("engine_config", {})}
+                compilation = ready.get("engine_config", {}).get("compilation_config", {})
+                self.engine_config["compilation_config"] = {key: compilation[key] for key in (
+                    "mode", "cudagraph_mode", "cudagraph_capture_sizes",
+                ) if key in compilation}
+                self.warmup = {key: ready["warmup"][key] for key in (
+                    "capacity", "request_count", "window_samples", "duration_ms",
+                ) if key in ready.get("warmup", {})}
             else:
                 self._receive()
         except Exception:
@@ -130,6 +148,13 @@ class Worker:
             self.socket.close()
 
 
+def _validated_capacity(capacity, settings):
+    if (type(capacity) is not int or not 2 <= capacity <= 16 or
+            capacity != settings.stream_max_num_seqs):
+        raise GPUError("流式工作进程容量与服务配置不一致")
+    return capacity
+
+
 class EngineRouter:
     def __init__(self, settings):
         self.settings = settings
@@ -157,7 +182,7 @@ class EngineRouter:
                 raise ValueError("模型空闲策略文件无效")
             self.idle_seconds = 120.0 if policy["auto_unload"] else 0.0
 
-    def status(self):
+    def status(self, device_id=None):
         with self._lifecycle_lock:
             mode, worker = self.mode, self.worker
             loaded = worker is not None and self._worker_ready(worker)
@@ -175,6 +200,11 @@ class EngineRouter:
                      "error" if error and not value.get("model_loaded") else
                      "ready" if value.get("model_loaded") else "unloaded")
             mobile_used = sum(item.kind == "mobile" for item in self._sessions.values())
+            capacity = worker.capacity if mode == "r2t2" and loaded else 0
+            mobile_capacity = max(0, capacity - 1)
+            mobile_available = max(0, mobile_capacity - mobile_used)
+            device_used = sum(item.kind == "mobile" and item.device_id == device_id
+                              for item in self._sessions.values()) if device_id else 0
             return {**value, "state": state, "mode": mode, "busy": bool(self._sessions) or self.gate.locked(),
                     "pc_busy": self.gate.locked(), "last_error": error,
                     "worker_pid": worker.process.pid if worker and worker.process else None,
@@ -184,8 +214,12 @@ class EngineRouter:
                     "model_generation": self.model_generation if value.get("model_loaded") else None,
                     "active_sessions": [{**self._binding(item), "kind": item.kind, "state": item.state}
                                         for item in self._sessions.values()],
-                    "mobile_slots_available": 1 - mobile_used, "max_sessions": 2,
-                    "mobile_slots": {"capacity": 1, "used": mobile_used, "available": 1 - mobile_used}}
+                    "mobile_slots_available": mobile_available, "max_sessions": capacity,
+                    "mobile_slots": {"capacity": mobile_capacity, "used": mobile_used,
+                                     "available": mobile_available},
+                    "device_slots_available": max(0, 1 - device_used) if device_id else 0,
+                    "engine_config": getattr(worker, "engine_config", {}) if loaded else {},
+                    "warmup": getattr(worker, "warmup", {}) if loaded else {}}
 
     def set_auto_unload(self, enabled: bool):
         if type(enabled) is not bool:
@@ -234,6 +268,12 @@ class EngineRouter:
                 self.offline.warmup()
             else:
                 worker = Worker(self.settings, mode)
+                if mode == "r2t2":
+                    try:
+                        _validated_capacity(worker.capacity, self.settings)
+                    except GPUError:
+                        worker.close()
+                        raise
                 with self._lifecycle_lock:
                     self.worker = worker
             with self._lifecycle_lock:
@@ -301,7 +341,8 @@ class EngineRouter:
         with self._lifecycle_lock:
             self._credential_validator = callback
 
-    def begin_mobile(self, session, expected_server_instance_id, expected_model_generation, credential_id):
+    def begin_mobile(self, session, expected_server_instance_id, expected_model_generation,
+                     credential_id, device_id):
         with self._lifecycle_lock:
             self._refresh_worker()
             if self._credential_validator is not None and not self._credential_validator(credential_id):
@@ -314,12 +355,16 @@ class EngineRouter:
                 raise SessionError("MODEL_NOT_READY", "请等待 PC 加载模型")
             if self.mode != "r2t2":
                 raise SessionError("MODEL_UNSUPPORTED", "当前模型不支持手机听写")
-            if any(item.kind == "mobile" for item in self._sessions.values()):
+            if not isinstance(device_id, str) or not device_id:
+                raise SessionError("UNAUTHORIZED", "设备身份无效")
+            mobile = [item for item in self._sessions.values() if item.kind == "mobile"]
+            if (len(mobile) >= self.worker.capacity - 1 or
+                    any(item.device_id == device_id for item in mobile)):
                 raise SessionError("CAPACITY_EXCEEDED", "手机听写名额已占用", True)
             if session in self._sessions or session in self._terminal_sessions:
                 raise SessionError("INVALID_MESSAGE", "会话标识已使用")
             item = Session(session, "mobile", self.mode, self.model_generation, self.worker,
-                           credential_id, state="starting")
+                           credential_id, device_id, state="starting")
             self._sessions[session] = item
         return self._start_session(item)
 

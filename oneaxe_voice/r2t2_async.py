@@ -37,12 +37,13 @@ class PreparedStep:
 
 
 class AsyncR2T2Adapter:
-    def __init__(self, engine, official, helpers, sampling_factory):
+    def __init__(self, engine, official, helpers, sampling_factory, *, configuration=None):
         self.engine = engine
         self.official = official
         self.processor = official.processor
         self.helpers = helpers
         self.sampling_factory = sampling_factory
+        self.configuration = dict(configuration or {})
 
     def init_streaming_state(self, **kwargs):
         return self.official.init_streaming_state(**kwargs)
@@ -195,7 +196,21 @@ class AsyncR2T2Decoder(StreamDecoder):
         self.inflight = None
         self.cancelled = False
         self.audio_processed_samples = 0
+        self.reset_metrics()
+
+    def reset_metrics(self, step_kind=None):
+        """Reset RPC totals; phase times sum all steps plus buffer-only preparation."""
         self.step_metrics = []
+        self.step_kind = step_kind
+        self.timings = {"prepare_ms": 0.0, "generate_ms": 0.0, "apply_ms": 0.0}
+
+    def _record_preparation(self, started):
+        self.timings["prepare_ms"] += (time.monotonic() - started) * 1000
+
+    def _record_apply(self, started):
+        elapsed = (time.monotonic() - started) * 1000
+        self.timings["apply_ms"] += elapsed
+        self.step_metrics[-1]["apply_ms"] = round(elapsed, 3)
 
     def _check(self):
         if self.cancelled:
@@ -211,35 +226,46 @@ class AsyncR2T2Decoder(StreamDecoder):
             text, counts = await self.model.generate(step, request_id)
             self._check()
             completed = time.monotonic()
+            prepare_ms = (submitted - prepare_started) * 1000
+            # This includes AsyncLLM scheduling and IPC; no CUDA synchronization is introduced.
+            generate_ms = (completed - submitted) * 1000
+            self.timings["prepare_ms"] += prepare_ms
+            self.timings["generate_ms"] += generate_ms
             self.step_metrics.append({"step": self.step_id, "utterance": self.utterance,
-                                      "kind": step.kind, "prepared_at": prepare_started,
+                                      "kind": step.kind, "step_kind": self.step_kind,
+                                      "prepared_at": prepare_started,
                                       "submitted_at": submitted, "completed_at": completed,
-                                      "prepare_ms": round((submitted - prepare_started) * 1000, 3),
-                                      "generate_ms": round((completed - submitted) * 1000, 3), **counts})
+                                      "prepare_ms": round(prepare_ms, 3),
+                                      "generate_ms": round(generate_ms, 3), "apply_ms": 0.0, **counts})
             return text
         finally:
             self.inflight = None
 
     async def feed(self, pcm):
         self._check()
+        self.reset_metrics("audio")
+        started = time.monotonic()
         if not pcm or len(pcm) > 64000 or len(pcm) % 2:
             raise ValueError("PCM16 chunk must contain 1 to 32000 samples")
-        self.step_metrics = []
         self.pending.extend(pcm)
+        self._record_preparation(started)
         changed = False
         while True:
+            started = time.monotonic()
             self._check()
             count = 5120 if self.first else 2560
             if len(self.pending) < count * 2:
+                self._record_preparation(started)
                 break
             audio = np.frombuffer(bytes(self.pending[:count * 2]), dtype="<i2")
             del self.pending[:count * 2]
             if self.first and not np.any(audio):
                 self.audio_processed_samples += count
+                self._record_preparation(started)
                 continue
-            started = time.monotonic()
             step = self.model.prepare_normal(audio, self.state, max_tokens=4 if self.first else 2)
             generated = await self._generate(step, started)
+            applied = time.monotonic()
             candidate, local_fixed = self.model.apply_normal(self.state, step, generated)
             fixed = self._global(local_fixed)
             local_pending = self._r2_pending(candidate, local_fixed)
@@ -253,22 +279,25 @@ class AsyncR2T2Decoder(StreamDecoder):
             self.state.chunk_size_sec, self.state.chunk_size_samples = .16, 2560
             self.audio_processed_samples += count
             self.max_window = max(self.max_window, len(self.state.audio_accum))
+            self._record_apply(applied)
             await asyncio.sleep(0)
         return self.result(changed)
 
     async def _finalize(self, *, restart):
         self._check()
-        self.step_metrics = []
+        self.reset_metrics("flush" if restart else "finish")
+        started = time.monotonic()
         tail_samples = len(self.pending) // 2
         tail = np.frombuffer(bytes(self.pending), dtype="<i2").astype(np.float32) / 32768
         self.pending.clear()
         if not self.has_audio and not np.any(tail):
             self.audio_processed_samples += tail_samples
+            self._record_preparation(started)
             return self.result()
-        started = time.monotonic()
         self.state.buffer = np.concatenate([self.state.buffer, tail, np.zeros(1280, dtype=np.float32)])
         step = self.model.prepare_final(self.state)
         generated = await self._generate(step, started)
+        applied = time.monotonic()
         final = self._global(self.model.apply_final(self.state, step, generated))
         if not final.startswith(self.committed):
             raise ValueError("Model final output revised the committed prefix")
@@ -282,6 +311,7 @@ class AsyncR2T2Decoder(StreamDecoder):
             self.state = self._new_state()
             self.first, self.utterance_boundary = True, True
             self.utterance += 1
+        self._record_apply(applied)
         return self.result(changed)
 
     async def flush(self):
@@ -299,4 +329,5 @@ class AsyncR2T2Decoder(StreamDecoder):
 
     def result(self, changed=False):
         return {**super().result(changed), "audio_processed_samples": self.audio_processed_samples,
-                "step_metrics": list(self.step_metrics)}
+                "step_kind": self.step_kind, **{key: round(value, 3) for key, value in self.timings.items()},
+                "step_metrics": [dict(metric) for metric in self.step_metrics]}

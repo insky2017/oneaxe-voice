@@ -25,6 +25,8 @@ class ModelLifecycleTests(unittest.TestCase):
         self.router.offline = MagicMock()
         self.router.offline.status.return_value = {"model_loaded": False, "state": "unloaded"}
         self.worker = MagicMock()
+        self.worker.capacity = 2
+        self.worker.engine_config = self.worker.warmup = {}
         self.worker.process.pid = 1234
         self.patcher = patch("oneaxe_voice.engines.Worker", return_value=self.worker)
         self.patcher.start()

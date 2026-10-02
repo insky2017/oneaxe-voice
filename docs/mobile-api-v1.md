@@ -1,6 +1,6 @@
 # OneAxe Voice 移动接口 V1
 
-2026-10-02，由 Voice 负责人定稿。**服务端已实现本契约**；Pocket 按本文开发。实际部署地址、凭据操作见 [部署文档](mobile-deployment.md)，GPU、接口和真机证据分别记录在 [验证记录](validation.md)。运行时数值以服务返回值为准，示例标识不是实际凭据或代次。
+2026-10-02，由 Voice 负责人定稿。本分支加入多路隔离实验候选，**正式部署仍为 1 PC + 1 手机**；可配置容量与新增性能字段尚未部署。实际部署地址、凭据操作见 [部署文档](mobile-deployment.md)，GPU、接口和真机证据分别记录在 [验证记录](validation.md)。运行时数值以服务返回值为准，示例标识不是实际凭据或代次。
 
 ## 入口和权限
 
@@ -19,8 +19,9 @@
 {"protocol_version":1,"server_instance_id":"boot-example","model_generation":"load-example","model_id":"Confucius4-R2T2","mode":"r2t2","model_state":"ready","ready":true,"stream_supported":true,"can_start":true,"unavailable_reason":null,"max_sessions":2,"mobile_slots_available":1,"audio":{"encoding":"pcm_s16le","sample_rate":16000,"channels":1,"max_frame_bytes":5120},"flow":{"window_samples":32000,"client_buffer_max_ms":2000},"session_max_seconds":3600}
 ```
 
-- `ready` 只表示实际模型完成加载和预热；`can_start` 同时考虑模式支持、切换状态及移动会话容量。查询结果不是容量预留。
-- 首版支持 1 路 PC + 1 路手机；为 PC 保留容量，不支持第二路手机。`mobile_slots_available` 为 0 或 1。
+- `ready` 只表示实际模型完成加载和预热；`can_start` 同时考虑模式支持、切换状态、移动会话容量、认证设备配额和 `voice.mobile.stream` 权限。查询结果不是容量预留。
+- 默认支持 1 路 PC + 1 路手机。实验配置总容量 N 时，PC 固定保留 1 路、远端池 N−1 路；每个服务端认证设备最多 1 路，正在建立的会话也占额。凭据轮换保持同一设备身份，不能绕过配额。
+- `max_sessions` 发布已就绪 R2T2 worker 的实际校验容量，未就绪或其他模式为 0。`mobile_slots_available` 为全局远端池剩余名额，范围 0..N−1。同设备已占用时，该值可能仍大于 0，但 `can_start=false`；客户端必须使用 `can_start` 和原因判断，不能只看空闲总数。
 - 首版只有 `r2t2` 的 `stream_supported=true`。其他模式返回 `MODEL_UNSUPPORTED`，不切换模型。
 - `model_state` 为 `unloaded/loading/ready/unloading/error`。未加载时模型代次为空；`server_instance_id` 在重启后变化，模型重新加载后 `model_generation` 变化。客户端把二者当不透明标识。
 - 不可开始时 `unavailable_reason` 使用下文稳定错误码。故障、未就绪、不支持、容量不足分别判断，不用 `ready` 一个字段代替所有状态。
@@ -83,6 +84,8 @@
 - 最终全文即使未变，仍发送新序号的 `final`。失败使用终止 `error`，不再发送表示成功的 `final`。
 - 去重键为实例、代次、会话及序号。旧序号忽略，新的固定全文必须以本地已收到的固定全文为前缀；不满足则停止自动填入并保留原文。
 - 手机分别保存已收到固定全文和已成功填入的位置。目标变化、取消或 App 重启后不自动补贴；此契约不承诺外部输入框任意故障下严格 exactly-once。
+
+候选版本的 `partial/final` 可附带 `step_kind=audio/flush/finish` 与性能数值：`api_queue_ms` 是 API 入队到出队，`rpc_ms` 是调用 worker 的墙钟时间，`queue_ms` 是 worker 收到 RPC 到取得会话锁，`inference_ms` 是锁内处理墙钟，`prepare_ms/generate_ms/apply_ms` 是本次 RPC 各阶段累计。`generate_ms` 包含 AsyncLLM 调度与 IPC，不能当作纯 GPU 时间。`step_metrics` 仅含分类、计数和耗时。客户端可忽略这些字段；快照可能合并，压测必须核验事件完整性，不能直接用缺失的采样算分位数。
 
 ## 错误、模型管理与断线
 

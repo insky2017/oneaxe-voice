@@ -12,6 +12,7 @@ import re
 from types import MethodType, SimpleNamespace
 from typing import Any, List, Optional, Tuple, Union
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -182,6 +183,62 @@ class AsyncAlgorithmTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["audio_processed_samples"], 6000)
         self.assertEqual(engine.calls, [])
         self.assertEqual(result["text"], "")
+
+    async def test_one_audio_rpc_accumulates_each_step_phase_and_resets_on_buffer_only_feed(self):
+        model = adapter()
+        decoder = AsyncR2T2Decoder(model, "session")
+        clock = SimpleNamespace(now=100.0)
+        prepare, generate, apply = model.prepare_normal, model.generate, model.apply_normal
+
+        def timed_prepare(*args, **kwargs):
+            value = prepare(*args, **kwargs)
+            clock.now += .001
+            return value
+
+        async def timed_generate(*args, **kwargs):
+            value = await generate(*args, **kwargs)
+            clock.now += .002
+            return value
+
+        def timed_apply(*args, **kwargs):
+            value = apply(*args, **kwargs)
+            clock.now += .003
+            return value
+
+        model.prepare_normal, model.generate, model.apply_normal = timed_prepare, timed_generate, timed_apply
+        with patch("oneaxe_voice.r2t2_async.time", SimpleNamespace(monotonic=lambda: clock.now)):
+            result = await decoder.feed(speech(10240))
+            buffered = await decoder.feed(speech(1))
+        self.assertEqual(result["step_kind"], "audio")
+        self.assertEqual(len(result["step_metrics"]), 3)
+        self.assertEqual(result["audio_processed_samples"], 10240)
+        for key, total in (("prepare_ms", 3), ("generate_ms", 6), ("apply_ms", 9)):
+            self.assertEqual(result[key], total)
+            self.assertEqual(sum(step[key] for step in result["step_metrics"]), total)
+            self.assertEqual(buffered[key], 0)
+        self.assertEqual([step["step_kind"] for step in result["step_metrics"]], ["audio"] * 3)
+        self.assertEqual([step["kind"] for step in result["step_metrics"]], ["normal"] * 3)
+        self.assertEqual(buffered["step_kind"], "audio")
+        self.assertEqual(buffered["step_metrics"], [])
+        for metric in result["step_metrics"]:
+            self.assertFalse({"text", "prompt", "audio", "request_id", "session"} & set(metric))
+
+    async def test_flush_and_finish_have_distinct_step_kinds(self):
+        decoder = AsyncR2T2Decoder(adapter(), "session")
+        await decoder.feed(speech())
+        flushed = await decoder.flush()
+        self.assertEqual(flushed["step_kind"], "flush")
+        self.assertEqual(flushed["step_metrics"][0]["step_kind"], "flush")
+        self.assertEqual(flushed["step_metrics"][0]["kind"], "final")
+        await decoder.feed(speech())
+        finished = await decoder.finish()
+        self.assertEqual(finished["step_kind"], "finish")
+        self.assertEqual(finished["step_metrics"][0]["step_kind"], "finish")
+        empty = await decoder.flush()
+        self.assertEqual(empty["step_kind"], "flush")
+        self.assertEqual(empty["step_metrics"], [])
+        self.assertEqual(empty["generate_ms"], 0)
+        self.assertEqual(empty["apply_ms"], 0)
 
     async def test_late_completion_after_cancel_cannot_commit(self):
         gate = asyncio.Event()

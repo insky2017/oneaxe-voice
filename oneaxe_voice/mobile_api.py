@@ -6,11 +6,12 @@ from contextlib import suppress
 from dataclasses import dataclass
 import json
 import logging
+import math
 import time
 import uuid
 
 import anyio
-from fastapi import HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field
 
 from .backend import BusyError
@@ -54,8 +55,36 @@ def failure(exc):
     return "SERVICE_UNAVAILABLE", "语音服务暂不可用", True
 
 
-def capabilities(engine, limits):
-    value = engine.status()
+def inference_extras(result):
+    extras = {key: result[key] for key in ("device", "window_seconds", "inference_ms", "preview")
+              if key in result}
+    numeric = {"queue_ms", "prepare_ms", "generate_ms", "apply_ms"}
+    for key in numeric:
+        value = result.get(key)
+        if type(value) in (int, float) and math.isfinite(value) and value >= 0:
+            extras[key] = value
+    if result.get("step_kind") in {"audio", "flush", "finish"}:
+        extras["step_kind"] = result["step_kind"]
+    if isinstance(result.get("step_metrics"), list):
+        metrics = []
+        counts = {"step", "utterance", "prepared_at", "submitted_at", "completed_at",
+                  "prompt_tokens", "generated_tokens"}
+        for entry in result["step_metrics"]:
+            if not isinstance(entry, dict):
+                continue
+            value = {key: item for key, item in entry.items() if key in numeric | counts
+                     and type(item) in (int, float) and math.isfinite(item) and item >= 0}
+            if entry.get("kind") in {"normal", "final"}:
+                value["kind"] = entry["kind"]
+            if entry.get("step_kind") in {"audio", "flush", "finish"}:
+                value["step_kind"] = entry["step_kind"]
+            metrics.append(value)
+        extras["step_metrics"] = metrics
+    return extras
+
+
+def capabilities(engine, limits, principal):
+    value = engine.status(device_id=principal.device_id)
     state = value.get("state", "unloaded")
     if state == "transcribing":
         state = "ready"
@@ -68,7 +97,9 @@ def capabilities(engine, limits):
         reason = "MODEL_NOT_READY"
     elif not supported:
         reason = "MODEL_UNSUPPORTED"
-    elif not slots:
+    elif MOBILE_STREAM not in principal.scopes:
+        reason = "FORBIDDEN"
+    elif slots <= 0 or value.get("device_slots_available", 0) <= 0:
         reason = "CAPACITY_EXCEEDED"
     else:
         reason = None
@@ -77,7 +108,7 @@ def capabilities(engine, limits):
             "model_id": value.get("model"), "mode": value.get("mode"),
             "model_state": state, "ready": ready, "stream_supported": supported,
             "can_start": reason is None, "unavailable_reason": reason,
-            "max_sessions": value.get("max_sessions", 2), "mobile_slots_available": slots,
+            "max_sessions": value.get("max_sessions", 0), "mobile_slots_available": slots,
             "audio": {**AUDIO_FORMAT, "max_frame_bytes": limits.max_frame_bytes},
             "flow": {"window_samples": limits.window_samples, "client_buffer_max_ms": 2000},
             "session_max_seconds": limits.session_seconds}
@@ -259,7 +290,7 @@ class V1Stream:
 
     def enqueue(self, item):
         try:
-            self.work.put_nowait(item)
+            self.work.put_nowait((*item, time.monotonic()))
         except asyncio.QueueFull:
             raise ProtocolError("FLOW_CONTROL_EXCEEDED", "本会话待处理消息过多") from None
 
@@ -267,7 +298,9 @@ class V1Stream:
         flushed_at = None
         try:
             while not self.terminal.is_set():
-                op, data = await self.work.get()
+                op, data, queued_at = await self.work.get()
+                rpc_started = time.monotonic()
+                api_queue_ms = round((rpc_started - queued_at) * 1000, 3)
                 if op == "audio":
                     result = await self.worker_call(self.engine.feed, self.session, data)
                 elif op == "flush":
@@ -277,13 +310,14 @@ class V1Stream:
                     flushed_at = data
                 else:
                     result = await self.worker_call(self.engine.finish, self.session)
+                rpc_ms = round((time.monotonic() - rpc_started) * 1000, 3)
                 if self.terminal.is_set():
                     return
                 self.absorb(result)
                 if op == "finish" and self.processed != self.received:
                     raise ProtocolError("SERVICE_UNAVAILABLE", "结束时仍有未完成的音频")
-                extras = {key: result[key] for key in ("device", "window_seconds", "inference_ms", "preview")
-                          if key in result}
+                extras = inference_extras(result)
+                extras.update(api_queue_ms=api_queue_ms, rpc_ms=rpc_ms)
                 self.emit({"type": "flow", **self.progress()})
                 event = {**extras, **self.progress(), "type": "final" if op == "finish" else "partial",
                          "text": self.text, "pending": self.pending,
@@ -335,7 +369,8 @@ class V1Stream:
                     raise ProtocolError("UNAUTHORIZED", "设备凭据已失效")
                 start_args = (self.engine.begin_mobile, self.session,
                               hello["expected_server_instance_id"],
-                              hello["expected_model_generation"], self.principal.credential_id)
+                              hello["expected_model_generation"], self.principal.credential_id,
+                              self.principal.device_id)
             else:
                 start_args = (self.engine.begin, "r2t2", self.session)
             self.begin_attempted = True
@@ -389,8 +424,8 @@ def register_v1(app, engine, credentials, worker_call, limits=None):
     limits = limits or StreamLimits()
 
     @app.get("/api/mobile/v1/capabilities")
-    async def mobile_capabilities():
-        return capabilities(engine, limits)
+    async def mobile_capabilities(request: Request):
+        return capabilities(engine, limits, request.scope["voice.principal"])
 
     @app.websocket("/api/mobile/v1/dictation/stream")
     async def mobile_stream(ws: WebSocket):

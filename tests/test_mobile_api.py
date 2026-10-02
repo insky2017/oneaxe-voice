@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import tempfile
 import threading
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -18,14 +19,15 @@ from starlette.websockets import WebSocketDisconnect
 from oneaxe_voice.cli import main
 from oneaxe_voice.config import Settings
 from oneaxe_voice.device_auth import DeviceCredentialStore, MOBILE_READ
-from oneaxe_voice.mobile_api import AUDIO_FORMAT, ProtocolError, StreamLimits, V1Stream
+from oneaxe_voice.mobile_api import AUDIO_FORMAT, ProtocolError, StreamLimits, V1Stream, inference_extras
 from oneaxe_voice.server import LocalAccess, create_app
 
 
 class StubSessions:
-    def __init__(self):
+    def __init__(self, capacity=2):
         self.mode, self.generation, self.instance = "r2t2", "generation-1", "instance-1"
         self.loaded = True
+        self.capacity = capacity
         self.sessions = {}
         self.lock = threading.RLock()
         self.manage_calls = 0
@@ -36,25 +38,29 @@ class StubSessions:
     def set_mobile_credential_validator(self, callback):
         self.validator = callback
 
-    def status(self):
+    def status(self, device_id=None):
         with self.lock:
             mobile = sum(value["mobile"] and not value["terminal_reason"]
                          for value in self.sessions.values())
             return {"state": "ready" if self.loaded else "unloaded", "model_loaded": self.loaded,
-                    "mode": self.mode, "model": "Confucius4-R2T2", "max_sessions": 2,
+                    "mode": self.mode, "model": "Confucius4-R2T2", "max_sessions": self.capacity,
                     "server_instance_id": self.instance,
                     "model_generation": self.generation if self.loaded else None,
-                    "mobile_slots_available": 1 - mobile}
+                    "mobile_slots_available": self.capacity - 1 - mobile,
+                    "device_slots_available": int(not any(
+                        value["mobile"] and not value["terminal_reason"] and value["device_id"] == device_id
+                        for value in self.sessions.values()))}
 
-    def _begin(self, session, mobile, credential_id=None):
+    def _begin(self, session, mobile, credential_id=None, device_id=None):
         binding = {"session_id": session, "server_instance_id": self.instance,
                    "model_generation": self.generation, "device": "cuda:0", "mode": self.mode}
         self.sessions[session] = {**binding, "mobile": mobile, "credential_id": credential_id,
+                                  "device_id": device_id,
                                   "text": "", "pending": "", "audio_processed_samples": 0,
                                   "state": "active", "terminal_reason": None}
         return binding
 
-    def begin_mobile(self, session, instance, generation, credential_id):
+    def begin_mobile(self, session, instance, generation, credential_id, device_id):
         with self.lock:
             if not self.validator(credential_id):
                 raise ProtocolError("UNAUTHORIZED", "revoked")
@@ -64,9 +70,10 @@ class StubSessions:
                 raise ProtocolError("MODEL_NOT_READY", "not ready")
             if self.mode != "r2t2":
                 raise ProtocolError("MODEL_UNSUPPORTED", "unsupported")
-            if not self.status()["mobile_slots_available"]:
+            status = self.status(device_id)
+            if not status["mobile_slots_available"] or not status["device_slots_available"]:
                 raise ProtocolError("CAPACITY_EXCEEDED", "full", True)
-            return self._begin(session, True, credential_id)
+            return self._begin(session, True, credential_id, device_id)
 
     def begin(self, mode, session):
         with self.lock:
@@ -193,6 +200,59 @@ class MobileAPITests(unittest.TestCase):
         self.assertIsNone(value["model_generation"])
         self.assertEqual(value["unavailable_reason"], "MODEL_NOT_READY")
 
+    def test_capabilities_and_start_use_authenticated_device_with_free_global_slots(self):
+        self.engine.capacity = 4
+        other = self.store.issue("other synthetic phone")
+        other_headers = {"Authorization": "Bearer " + other["token"]}
+        with self.connect() as ws:
+            ws.send_json(self.start())
+            ready = ws.receive_json()
+            session = self.engine.sessions[ready["session_id"]]
+            self.assertEqual(session["credential_id"], self.device["credential_id"])
+            self.assertEqual(session["device_id"], self.device["device_id"])
+            self.assertNotIn("credential_id", ready)
+            self.assertNotIn("device_id", ready)
+            own = self.client.get("/api/mobile/v1/capabilities?device_id=" + other["device_id"],
+                                  headers=self.mobile_headers).json()
+            self.assertEqual(own["max_sessions"], 4)
+            self.assertEqual(own["mobile_slots_available"], 2)
+            self.assertFalse(own["can_start"])
+            self.assertEqual(own["unavailable_reason"], "CAPACITY_EXCEEDED")
+            self.assertTrue(self.client.get("/api/mobile/v1/capabilities", headers=other_headers).json()["can_start"])
+            with self.connect() as duplicate:
+                duplicate.send_json(self.start())
+                self.assertEqual(duplicate.receive_json()["code"], "CAPACITY_EXCEEDED")
+        self.assertTrue(self.client.get("/api/mobile/v1/capabilities", headers=self.mobile_headers).json()["can_start"])
+
+    def test_partial_events_forward_only_allowed_performance_fields(self):
+        metrics = {"queue_ms": 1.5, "prepare_ms": 2.5, "generate_ms": 3.5, "apply_ms": 4.5,
+                   "step_kind": "audio", "credential_id": "private credential", "debug": "private text",
+                   "step_metrics": [{"step": 1, "kind": "normal", "step_kind": "audio",
+                                     "prepare_ms": 2.5, "generate_ms": 3.5, "apply_ms": 4.5,
+                                     "prompt_tokens": 64, "generated_tokens": 2,
+                                     "device_id": "private device", "text": "private text"}]}
+        original = self.engine.feed
+        with patch.object(self.engine, "feed", side_effect=lambda *args: {**original(*args), **metrics}):
+            with self.connect() as ws:
+                ws.send_json(self.start())
+                ws.receive_json()
+                ws.send_bytes(b"\1\0" * 2560)
+                partial = self.until(ws, "partial")
+                for key in ("queue_ms", "prepare_ms", "generate_ms", "apply_ms", "step_kind"):
+                    self.assertEqual(partial[key], metrics[key])
+                self.assertEqual(partial["step_metrics"][0]["generated_tokens"], 2)
+                self.assertEqual(partial["step_metrics"][0]["step_kind"], "audio")
+                self.assertNotIn("device_id", partial["step_metrics"][0])
+                self.assertNotIn("text", partial["step_metrics"][0])
+                self.assertNotIn("credential_id", partial)
+                self.assertNotIn("debug", partial)
+
+    def test_invalid_performance_values_do_not_become_wire_metadata(self):
+        value = inference_extras({"queue_ms": "private text", "generate_ms": float("nan"),
+                                  "prepare_ms": -1, "apply_ms": True, "step_kind": "private text",
+                                  "step_metrics": [{"generate_ms": "private text", "kind": "private text"}]})
+        self.assertEqual(value, {"step_metrics": [{}]})
+
     def test_mobile_credentials_cannot_use_any_old_or_admin_route(self):
         for path in ("status", "prepare", "warmup", "unload", "policy", "transcribe"):
             with self.subTest(path=path):
@@ -219,6 +279,9 @@ class MobileAPITests(unittest.TestCase):
         read_only = self.store.issue("read only", scopes=(MOBILE_READ,))
         headers = {"Authorization": "Bearer " + read_only["token"]}
         self.assertEqual(self.client.get("/api/mobile/v1/capabilities", headers=headers).status_code, 200)
+        value = self.client.get("/api/mobile/v1/capabilities", headers=headers).json()
+        self.assertFalse(value["can_start"])
+        self.assertEqual(value["unavailable_reason"], "FORBIDDEN")
         for headers, status in ((headers, 403),
                                 ({**self.mobile_headers, "Origin": "https://example.test"}, 403),
                                 ({}, 401)):
@@ -230,6 +293,7 @@ class MobileAPITests(unittest.TestCase):
 
     def test_start_management_fields_and_stale_generation_are_rejected(self):
         for change, expected in (({"mode": "r2t2"}, "INVALID_MESSAGE"),
+                                 ({"device_id": "another-device"}, "INVALID_MESSAGE"),
                                  ({"prepare": True}, "INVALID_MESSAGE"),
                                  ({"expected_model_generation": "old"}, "MODEL_CHANGED"),
                                  ({"expected_server_instance_id": "old"}, "MODEL_CHANGED")):
@@ -375,7 +439,8 @@ class MobileAPITests(unittest.TestCase):
 
 class V1TransportTests(unittest.IsolatedAsyncioTestCase):
     def stream(self, engine=None, worker_call=None, mobile=False):
-        ws = SimpleNamespace(scope={"voice.principal": SimpleNamespace(credential_id="test-device")})
+        ws = SimpleNamespace(scope={"voice.principal": SimpleNamespace(
+            credential_id="test-credential", device_id="test-device")})
         credentials = SimpleNamespace(is_active=lambda credential_id: True)
         return V1Stream(ws, engine, credentials, worker_call,
                         StreamLimits(output_queue_size=4), mobile)
@@ -395,6 +460,29 @@ class V1TransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(queued[1][0]["audio_processed_samples"], 100)
         self.assertEqual(queued[-1][1], 1000)
         self.assertEqual([event["audio_processed_samples"] for event, _ in queued], [0, 100, 100, 100])
+
+    async def test_api_queue_and_rpc_latency_are_distinct_event_measurements(self):
+        engine = StubSessions()
+
+        async def worker_call(method, *args):
+            await asyncio.sleep(.01)
+            return method(*args)
+
+        stream = self.stream(engine, worker_call)
+        engine.begin("r2t2", stream.session)
+        stream.received = 1
+        with patch("oneaxe_voice.mobile_api.time.monotonic", return_value=time.monotonic() - 1):
+            stream.enqueue(("audio", b"\1\0"))
+            stream.enqueue(("finish", 1))
+        await stream.processor()
+        events = [stream.output.get_nowait()[0] for _ in range(stream.output.qsize())]
+        reports = [event for event in events if event["type"] in {"partial", "final"}]
+        self.assertEqual([event["type"] for event in reports], ["partial", "final"])
+        for report in reports:
+            self.assertGreaterEqual(report["api_queue_ms"], 1000)
+            self.assertGreaterEqual(report["rpc_ms"], 5)
+            self.assertNotIn("credential_id", report)
+            self.assertNotIn("device_id", report)
 
     async def test_cancel_during_start_releases_late_session_for_mobile_and_pc(self):
         for mobile in (True, False):

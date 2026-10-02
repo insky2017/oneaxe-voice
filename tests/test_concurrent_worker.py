@@ -4,11 +4,12 @@ import asyncio
 import base64
 import json
 import socket
+import time
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
-from oneaxe_voice.concurrent_worker import ConcurrentSessions, engine_configuration, register_qwen_backend, serve, warm_model
+from oneaxe_voice.concurrent_worker import ConcurrentSessions, engine_configuration, register_qwen_backend, run, serve, warm_model
 from oneaxe_voice.r2t2_async import FatalEngineError
 from oneaxe_voice.worker_client import WorkerClient, WorkerRPCError
 from tests.test_r2t2_async import FakeEngine, adapter, speech
@@ -62,6 +63,32 @@ class ConcurrentWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(final["text"].startswith(first["text"]))
         self.assertEqual([call[1].max_tokens for call in engine.calls], [4, 64])
         self.assertEqual(sessions.sessions["pc"].decoder.utterance, 1)
+        self.assertEqual(first["step_kind"], "audio")
+        self.assertEqual(final["step_kind"], "flush")
+        self.assertGreater(final["queue_ms"], 0)
+        self.assertEqual(final["step_metrics"][0]["step_kind"], "flush")
+
+    async def test_rpc_metrics_cover_queue_and_repeated_finish_without_reusing_steps(self):
+        engine = FakeEngine()
+        sessions = ConcurrentSessions(adapter(engine))
+        await sessions.dispatch(request("start"))
+        pcm = base64.b64encode(speech(10240)).decode()
+        audio = await sessions.dispatch(request("audio", pcm=pcm), received=time.monotonic() - .025)
+        self.assertEqual(audio["step_kind"], "audio")
+        self.assertEqual(len(audio["step_metrics"]), 3)
+        self.assertGreaterEqual(audio["queue_ms"], 25)
+        for key in ("prepare_ms", "generate_ms", "apply_ms"):
+            self.assertGreaterEqual(audio[key], 0)
+        first = await sessions.dispatch(request("finish"))
+        self.assertEqual(first["step_kind"], "finish")
+        self.assertEqual(first["step_metrics"][0]["step_kind"], "finish")
+        repeated = await sessions.dispatch(request("finish"), received=time.monotonic() - .010)
+        self.assertEqual(repeated["text"], first["text"])
+        self.assertEqual(repeated["step_metrics"], [])
+        self.assertGreaterEqual(repeated["queue_ms"], 10)
+        for key in ("prepare_ms", "generate_ms", "apply_ms", "inference_ms"):
+            self.assertEqual(repeated[key], 0)
+        self.assertEqual(len(engine.calls), 4)
 
     async def test_bad_request_does_not_destroy_an_existing_session(self):
         sessions = ConcurrentSessions(adapter())
@@ -111,10 +138,57 @@ class ConcurrentWorkerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_warmup_covers_single_pair_and_long_pair(self):
         engine = FakeEngine()
-        await warm_model(adapter(engine))
+        summary = await warm_model(adapter(engine))
         self.assertEqual([len(call[0]["multi_modal_data"]["audio"][0]) for call in engine.calls],
                          [5120, 5120, 5120, 256000, 256000])
         self.assertEqual([call[1].max_tokens for call in engine.calls], [4, 4, 4, 2, 2])
+        self.assertEqual(summary["capacity"], 2)
+        self.assertEqual(summary["request_count"], 5)
+
+    async def test_warmup_covers_capacity_without_warming_every_intermediate_batch(self):
+        engine = FakeEngine()
+        summary = await warm_model(adapter(engine), capacity=4)
+        self.assertEqual([len(call[0]["multi_modal_data"]["audio"][0]) for call in engine.calls],
+                         [5120] * 5 + [256000] * 4)
+        self.assertEqual([call[1].max_tokens for call in engine.calls], [4] * 5 + [2] * 4)
+        self.assertEqual(len({call[2] for call in engine.calls}), 9)
+        self.assertEqual(summary["capacity"], 4)
+        self.assertEqual(summary["request_count"], 9)
+        self.assertEqual(summary["window_samples"], 256000)
+        self.assertGreaterEqual(summary["duration_ms"], 0)
+
+    async def test_ready_reports_loaded_configuration_and_warmup_without_model_path(self):
+        parent, child = socket.socketpair()
+        worker_fd = child.detach()
+        engine = FakeEngine()
+        model = adapter(engine)
+        with patch.dict("os.environ", {"ONEAXE_VOICE_STREAM_MAX_NUM_SEQS": "4"}, clear=True):
+            model.configuration = engine_configuration("private/model/path")
+        parent.setblocking(False)
+        reader, writer = await asyncio.open_connection(sock=parent, limit=200000)
+        serving = AsyncMock()
+        try:
+            with patch.dict("os.environ", {"ONEAXE_WORKER_FD": str(worker_fd)}), \
+                    patch("oneaxe_voice.concurrent_worker.sys.argv", ["worker", "r2t2", "model"]), \
+                    patch("oneaxe_voice.concurrent_worker.load_model", AsyncMock(return_value=(model, 4))), \
+                    patch("oneaxe_voice.concurrent_worker.serve", serving):
+                await run()
+            message = json.loads(await reader.readline())
+            self.assertTrue(message["ready"])
+            self.assertEqual(message["capacity"], 4)
+            self.assertEqual(message["engine_config"]["max_num_seqs"], 4)
+            self.assertEqual(message["engine_config"]["kv_cache_memory_bytes"], 1024**3)
+            self.assertEqual(message["engine_config"]["compilation_config"]["cudagraph_capture_sizes"],
+                             [1, 2, 3, 4])
+            self.assertNotIn("model", message["engine_config"])
+            self.assertNotIn("private/model/path", json.dumps(message))
+            self.assertEqual(message["warmup"]["capacity"], 4)
+            self.assertEqual(message["warmup"]["request_count"], 9)
+            self.assertEqual(serving.await_args.args[2].capacity, 4)
+            self.assertEqual(engine.shutdown_count, 1)
+        finally:
+            writer.close()
+            await writer.wait_closed()
 
     async def test_socket_dispatch_reads_cancel_while_audio_is_inflight(self):
         gate = asyncio.Event()
@@ -189,12 +263,29 @@ class ConcurrentWorkerTests(unittest.IsolatedAsyncioTestCase):
             config = engine_configuration("model")
             self.assertEqual(config["max_num_seqs"], 2)
             self.assertEqual(config["kv_cache_memory_bytes"], 1024**3)
+            self.assertEqual(config["compilation_config"]["cudagraph_capture_sizes"], [1, 2])
+            self.assertEqual(config["dtype"], "float16")
+            self.assertEqual(config["max_model_len"], 4096)
         with patch.dict("os.environ", {"ONEAXE_VOICE_STREAM_MAX_NUM_SEQS": "4",
                                       "ONEAXE_VOICE_STREAM_KV_CACHE_BYTES": str(512 * 1024**2)}, clear=True):
-            self.assertEqual(engine_configuration("model")["max_num_seqs"], 4)
+            config = engine_configuration("model")
+            self.assertEqual(config["max_num_seqs"], 4)
+            self.assertEqual(config["compilation_config"]["cudagraph_capture_sizes"], [1, 2, 3, 4])
         with patch.dict("os.environ", {"ONEAXE_VOICE_STREAM_MAX_NUM_SEQS": "1"}, clear=True):
             with self.assertRaises(ValueError):
                 engine_configuration("model")
+
+    def test_capture_sizes_can_be_overridden_with_bounded_sparse_batches(self):
+        with patch.dict("os.environ", {"ONEAXE_VOICE_STREAM_MAX_NUM_SEQS": "4",
+                                      "ONEAXE_VOICE_STREAM_CUDAGRAPH_CAPTURE_SIZES": "4, 1"}, clear=True):
+            self.assertEqual(engine_configuration("model")["compilation_config"]["cudagraph_capture_sizes"],
+                             [1, 4])
+        for override in ("", "1,", "0,1", "1,5", "1,1", "1.5", "all"):
+            with self.subTest(override=override), patch.dict("os.environ", {
+                    "ONEAXE_VOICE_STREAM_MAX_NUM_SEQS": "4",
+                    "ONEAXE_VOICE_STREAM_CUDAGRAPH_CAPTURE_SIZES": override}, clear=True):
+                with self.assertRaises(ValueError):
+                    engine_configuration("model")
 
     def test_registration_is_explicit_repeatable_and_lazy(self):
         from unittest.mock import MagicMock

@@ -21,6 +21,11 @@ class Settings:
     cuda_device: int = 0
     max_new_tokens: int = 512
     api_url: str = "http://127.0.0.1:8097"
+    stream_max_num_seqs: int = 2
+
+    def __post_init__(self):
+        if type(self.stream_max_num_seqs) is not int or not 2 <= self.stream_max_num_seqs <= 16:
+            raise ValueError("ONEAXE_VOICE_STREAM_MAX_NUM_SEQS must be an integer in [2, 16]")
 
     @property
     def token_path(self) -> Path:
@@ -42,6 +47,7 @@ class Settings:
             idle_seconds=float(os.getenv("ONEAXE_VOICE_IDLE_SECONDS", "0")),
             cuda_device=int(os.getenv("ONEAXE_VOICE_CUDA_DEVICE", "0")),
             api_url=os.getenv("ONEAXE_VOICE_API_URL", "http://127.0.0.1:8097"),
+            stream_max_num_seqs=int(os.getenv("ONEAXE_VOICE_STREAM_MAX_NUM_SEQS", "2")),
         )
         if not 0 < value.memory_fraction <= 1:
             raise ValueError("ONEAXE_VOICE_MEMORY_FRACTION must be in (0, 1]")
