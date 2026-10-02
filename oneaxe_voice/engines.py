@@ -68,7 +68,7 @@ class Worker:
                    CUDA_VISIBLE_DEVICES=str(settings.cuda_device),
                    HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", OMP_NUM_THREADS="4",
                    VLLM_WORKER_MULTIPROC_METHOD="spawn", TOKENIZERS_PARALLELISM="false")
-        if mode == "r2t2":
+        if mode in {"r2t2", "qwen-stream"}:
             env["OMP_WAIT_POLICY"] = "PASSIVE"
         try:
             log = settings.runtime_dir / "stream-worker.log"

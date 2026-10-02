@@ -76,7 +76,7 @@ class WorkerEnvironmentTests(unittest.TestCase):
         self.assertEqual(launch["env"]["OMP_WAIT_POLICY"], "PASSIVE")
         self.assertEqual(os.environ["OMP_WAIT_POLICY"], "ACTIVE")
 
-    def test_qwen_inherits_parent_wait_policy(self):
+    def test_qwen_uses_passive_without_changing_parent_wait_policy(self):
         for policy in (None, "ACTIVE", "PASSIVE"):
             with self.subTest(policy=policy):
                 if policy is None:
@@ -85,10 +85,11 @@ class WorkerEnvironmentTests(unittest.TestCase):
                     os.environ["OMP_WAIT_POLICY"] = policy
                 launch = self.start("qwen-stream")
                 self.assertEqual(launch["command"][2], "oneaxe_voice.stream_worker")
+                self.assertEqual(launch["env"]["OMP_WAIT_POLICY"], "PASSIVE")
                 if policy is None:
-                    self.assertNotIn("OMP_WAIT_POLICY", launch["env"])
+                    self.assertNotIn("OMP_WAIT_POLICY", os.environ)
                 else:
-                    self.assertEqual(launch["env"]["OMP_WAIT_POLICY"], policy)
+                    self.assertEqual(os.environ["OMP_WAIT_POLICY"], policy)
 
 
 if __name__ == "__main__":
