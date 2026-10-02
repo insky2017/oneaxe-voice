@@ -31,10 +31,13 @@ import android.view.View;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.SurroundingText;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import java.io.File;
@@ -50,6 +53,7 @@ public final class VoiceAccessibilityService extends AccessibilityService {
     private WindowManager.LayoutParams bubbleParams;
     private TextView bubble;
     private LinearLayout menu;
+    private TerminalDraftPanel terminalPanel;
     private AccessibilityNodeInfo target;
     private VoiceInputMethod voiceInputMethod;
     private EditorTarget editorTarget;
@@ -165,6 +169,182 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         }
     }
 
+    private final class TerminalDraftPanel {
+        final DictationRun run;
+        final TerminalTarget destination;
+        final TerminalDraftState state = new TerminalDraftState();
+        final LinearLayout view = new LinearLayout(VoiceAccessibilityService.this);
+        final TextView status = new TextView(VoiceAccessibilityService.this);
+        final TextView fixed = new TextView(VoiceAccessibilityService.this);
+        final TextView pending = new TextView(VoiceAccessibilityService.this);
+        final ScrollView scroller = new ScrollView(VoiceAccessibilityService.this);
+        final EditText editor = new EditText(VoiceAccessibilityService.this);
+        final Button stop = new Button(VoiceAccessibilityService.this);
+        final Button confirm = new Button(VoiceAccessibilityService.this);
+        WindowManager.LayoutParams layout;
+        boolean visible;
+
+        TerminalDraftPanel(DictationRun run, TerminalTarget destination) {
+            this.run = run;
+            this.destination = destination;
+            view.setOrientation(LinearLayout.VERTICAL);
+            view.setPadding(dp(12), dp(8), dp(12), dp(8));
+            GradientDrawable background = new GradientDrawable();
+            background.setColor(Color.rgb(250, 252, 251));
+            background.setCornerRadius(dp(7));
+            background.setStroke(dp(1), Color.rgb(173, 193, 188));
+            view.setBackground(background);
+            view.setElevation(dp(8));
+
+            TextView handle = new TextView(VoiceAccessibilityService.this);
+            handle.setText("语音草稿  ·  拖动");
+            handle.setContentDescription("拖动语音草稿浮窗");
+            handle.setTextColor(Color.rgb(28, 72, 67));
+            handle.setTextSize(14);
+            handle.setPadding(dp(2), dp(4), dp(2), dp(8));
+            handle.setOnTouchListener(new View.OnTouchListener() {
+                float downX, downY;
+                int startX, startY;
+                @Override public boolean onTouch(View touched, MotionEvent event) {
+                    if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                        downX = event.getRawX(); downY = event.getRawY();
+                        startX = layout.x; startY = layout.y;
+                        return true;
+                    }
+                    if (event.getActionMasked() == MotionEvent.ACTION_MOVE && visible) {
+                        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+                        int screenHeight = getResources().getDisplayMetrics().heightPixels;
+                        layout.x = Math.max(0, Math.min(screenWidth - view.getWidth(),
+                                startX + (int) (event.getRawX() - downX)));
+                        layout.y = Math.max(0, Math.min(screenHeight - view.getHeight(),
+                                startY + (int) (event.getRawY() - downY)));
+                        windows.updateViewLayout(view, layout);
+                        return true;
+                    }
+                    return event.getActionMasked() == MotionEvent.ACTION_UP;
+                }
+            });
+            view.addView(handle);
+
+            status.setText("正在连接…");
+            status.setTextColor(Color.rgb(70, 85, 83));
+            status.setContentDescription("听写状态");
+            view.addView(status);
+
+            scroller.setFillViewport(true);
+            LinearLayout textArea = new LinearLayout(VoiceAccessibilityService.this);
+            textArea.setOrientation(LinearLayout.VERTICAL);
+            fixed.setTextSize(16);
+            fixed.setTextColor(Color.rgb(28, 34, 33));
+            fixed.setMinHeight(dp(56));
+            fixed.setContentDescription("已确定文字");
+            textArea.addView(fixed);
+            pending.setTextSize(15);
+            pending.setTextColor(Color.rgb(112, 119, 116));
+            pending.setContentDescription("候选文字");
+            textArea.addView(pending);
+            editor.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+            editor.setSingleLine(false);
+            editor.setMinLines(3);
+            editor.setMaxLines(7);
+            editor.setTextSize(16);
+            editor.setContentDescription("编辑听写草稿");
+            editor.setVisibility(View.GONE);
+            textArea.addView(editor);
+            scroller.addView(textArea);
+            view.addView(scroller, new LinearLayout.LayoutParams(-1, dp(156)));
+
+            LinearLayout actions = new LinearLayout(VoiceAccessibilityService.this);
+            stop.setText("结束听写");
+            stop.setEnabled(false);
+            stop.setOnClickListener(ignored -> stopRecording());
+            actions.addView(stop, new LinearLayout.LayoutParams(0, dp(48), 1));
+            confirm.setText("确认粘贴");
+            confirm.setVisibility(View.GONE);
+            confirm.setOnClickListener(ignored -> submit());
+            actions.addView(confirm, new LinearLayout.LayoutParams(0, dp(48), 1));
+            Button discard = new Button(VoiceAccessibilityService.this);
+            discard.setText("取消");
+            discard.setOnClickListener(ignored -> {
+                if (activeRun == run) cancelRecording();
+                else closeTerminalPanel();
+            });
+            actions.addView(discard, new LinearLayout.LayoutParams(0, dp(48), 1));
+            view.addView(actions);
+
+            int width = Math.min(340, (int) (getResources().getDisplayMetrics().widthPixels
+                    / getResources().getDisplayMetrics().density) - 24);
+            layout = params(width, WindowManager.LayoutParams.WRAP_CONTENT);
+            layout.gravity = Gravity.TOP | Gravity.START;
+            layout.x = dp(12);
+            layout.y = dp(72);
+            layout.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+            layout.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
+        }
+
+        void show() { if (!visible) { windows.addView(view, layout); visible = true; } }
+        void hide() { if (visible) { windows.removeView(view); visible = false; } }
+        void readyRecording() { stop.setEnabled(true); status.setText("正在听写"); }
+
+        void update(String committed, String candidate) {
+            if (state.phase() == TerminalDraftState.Phase.EDITING) return;
+            fixed.setText(committed);
+            pending.setText(candidate.isEmpty() ? "" : "候选 · " + candidate);
+            scroller.post(() -> scroller.fullScroll(View.FOCUS_DOWN));
+            Log.i("VoiceLabTerminal", "preview fixedChars=" + committed.length()
+                    + " pendingChars=" + candidate.length() + " phase=" + state.phase());
+            status.setText(state.targetChanged() ? "终端目标已变化，无法直接粘贴"
+                    : state.phase() == TerminalDraftState.Phase.FINISHING
+                    ? "正在收尾…" : "正在听写");
+        }
+
+        void stopping() {
+            state.stopping();
+            stop.setEnabled(false);
+            status.setText("正在收尾…");
+        }
+
+        void finish(String text, String result, boolean complete) {
+            state.editable();
+            Log.i("VoiceLabTerminal", "editable fixedChars=" + text.length()
+                    + " complete=" + complete + " targetChanged=" + state.targetChanged());
+            fixed.setVisibility(View.GONE);
+            pending.setVisibility(View.GONE);
+            editor.setText(text);
+            editor.setSelection(editor.length());
+            editor.setVisibility(View.VISIBLE);
+            stop.setVisibility(View.GONE);
+            confirm.setVisibility(View.VISIBLE);
+            confirm.setEnabled(!state.targetChanged());
+            status.setText(state.targetChanged() ? "终端目标已变化；本轮不会粘贴"
+                    : complete ? "已停止，可编辑后确认粘贴"
+                    : "识别中断：" + result + "；已收到的文字可编辑后手动确认");
+            layout.flags &= ~WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+            if (visible) windows.updateViewLayout(view, layout);
+        }
+
+        void invalidateTarget() {
+            state.markTargetChanged();
+            confirm.setEnabled(false);
+            status.setText("终端目标已变化；本轮不会粘贴");
+        }
+
+        void submit() {
+            if (!state.beginSubmit()) return;
+            String safe = TerminalInputPolicy.pasteText(editor.getText().toString());
+            if (safe == null || safe.isEmpty()) {
+                state.retry();
+                status.setText(safe == null ? "草稿含控制字符，请修改后重试" : "草稿为空");
+                return;
+            }
+            confirm.setEnabled(false);
+            draft = new StringBuffer(editor.getText().toString());
+            Log.i("VoiceLabTerminal", "confirm chars=" + safe.length());
+            hide();
+            awaitTerminal(this, safe, SystemClock.uptimeMillis() + 1600);
+        }
+    }
+
     @Override public InputMethod onCreateInputMethod() {
         voiceInputMethod = new VoiceInputMethod();
         return voiceInputMethod;
@@ -217,8 +397,22 @@ public final class VoiceAccessibilityService extends AccessibilityService {
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
+        TerminalDraftPanel panel = terminalPanel;
+        if (panel != null && event.getWindowId() == panel.destination.windowId
+                && event.getPackageName() != null
+                && TerminalInputPolicy.PACKAGE.contentEquals(event.getPackageName())) {
+            AccessibilityNodeInfo termux = terminalWindow(panel.destination.windowId);
+            if (termux != null && drawerOpen(termux)) panel.invalidateTarget();
+            else if (event.getEventType() == AccessibilityEvent.TYPE_VIEW_FOCUSED
+                    && panel.state.phase() != TerminalDraftState.Phase.EDITING) {
+                AccessibilityNodeInfo source = event.getSource();
+                if (source != null && !source.equals(panel.destination.node)) panel.invalidateTarget();
+            }
+        }
         DictationRun terminalRun = activeRun;
         if (terminalRun != null && terminalTarget != null
+                && event.getPackageName() != null
+                && TerminalInputPolicy.PACKAGE.contentEquals(event.getPackageName())
                 && (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
                 || event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
                 || event.getEventType() == AccessibilityEvent.TYPE_VIEW_FOCUSED)
@@ -244,12 +438,14 @@ public final class VoiceAccessibilityService extends AccessibilityService {
     @Override public void onInterrupt() { cancelRecording(); }
     @Override public void onDestroy() {
         cancelRecording();
+        closeTerminalPanel();
         hideMenu();
         if (bubble != null) windows.removeView(bubble);
         super.onDestroy();
     }
 
     private void toggleMenu() {
+        if (terminalPanel != null) { hideMenu(); return; }
         if (menu != null) { hideMenu(); return; }
         menu = new LinearLayout(this);
         menu.setOrientation(LinearLayout.VERTICAL);
@@ -338,17 +534,20 @@ public final class VoiceAccessibilityService extends AccessibilityService {
     private void openDictation(boolean fixture, int fixtureSeconds) { openDictation(fixture, fixtureSeconds, false); }
 
     private void openDictation(boolean fixture, int fixtureSeconds, boolean microphoneFixture) {
-        if (activeRun != null || checkingConnection) return;
+        if (activeRun != null || checkingConnection || terminalPanel != null) return;
         if (!fixture && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             message("请先在 Voice Lab 授予麦克风权限");
             return;
         }
         if (!prepareTarget()) return;
-        if (terminalTarget != null) message("终端模式：听写结束后一次粘贴，文字同时保留在剪贴板");
         DictationRun run = new DictationRun();
         run.fixtureSeconds = fixtureSeconds;
         run.microphoneFixture = microphoneFixture;
         activeRun = run;
+        if (terminalTarget != null) {
+            terminalPanel = new TerminalDraftPanel(run, terminalTarget);
+            terminalPanel.show();
+        }
         checkingConnection = true;
         sessionActive = true;
         anySessionActive = true;
@@ -390,6 +589,8 @@ public final class VoiceAccessibilityService extends AccessibilityService {
                     }
                     run.capturing = true;
                     recording = true;
+                    if (terminalPanel != null && terminalPanel.run == run)
+                        terminalPanel.readyRecording();
                     bubble.setText(fixture ? "测" : "停");
                     run.thread = new Thread(() -> {
                         if (fixture) fixtureLoop(run, new File(getFilesDir(), "fixture.wav"));
@@ -424,6 +625,7 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         DictationRun run = activeRun;
         if (run == null) return;
         recording = false;
+        if (terminalPanel != null && terminalPanel.run == run) terminalPanel.stopping();
         if (run.playback != null) run.playback.cancel();
         stopCapture(run);
         if (bubble != null) bubble.setText("收");
@@ -431,15 +633,19 @@ public final class VoiceAccessibilityService extends AccessibilityService {
 
     private void cancelRecording() {
         DictationRun run = activeRun;
-        if (run == null) return;
+        if (run == null) { closeTerminalPanel(); return; }
         cancelled = true;
         endRun(run, "已取消；已收到的文字保留在草稿中");
+        closeTerminalPanel();
     }
 
     private void failRun(DictationRun run, String status) { endRun(run, status); }
 
     private void endRun(DictationRun run, String status) {
         if (activeRun != run) return;
+        TerminalDraftPanel panel = terminalPanel;
+        if (panel != null && panel.run == run)
+            panel.finish(run.transcript.fixed(), status, run.finalStatus != null);
         // Close both receive and input gates before the transport or old callbacks can race us.
         run.transcript.close();
         Log.i("VoiceLabSession", "ended receivedChars=" + run.transcript.fixed().length()
@@ -481,6 +687,8 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         if (activeRun != run || run.cancelled) return;
         draft = new StringBuffer(run.transcript.fixed());
         if (terminalTarget != null) {
+            if (terminalPanel != null && terminalPanel.run == run)
+                terminalPanel.update(run.transcript.fixed(), run.transcript.pending());
             applyTerminalDraft(run);
             return;
         }
@@ -531,24 +739,17 @@ public final class VoiceAccessibilityService extends AccessibilityService {
     }
 
     private void applyTerminalDraft(DictationRun run) {
+        if (terminalPanel != null && terminalPanel.state.targetChanged()) {
+            detachTarget(run, "terminal target changed");
+            if (run.finalStatus != null) endRun(run, "终端目标已变化；文字保留在草稿中");
+            return;
+        }
         if (!terminalReady()) {
             detachTarget(run, "terminal target changed");
             if (run.finalStatus != null) endRun(run, "终端目标已变化；文字保留在悬浮菜单草稿中");
             return;
         }
-        if (run.finalStatus == null || run.terminalPasteAttempted) return;
-        run.terminalPasteAttempted = true;
-        String text = TerminalInputPolicy.pasteText(run.transcript.fixed());
-        if (text == null) {
-            endRun(run, "文字含终端控制字符，未粘贴；完整文字保留在草稿中");
-        } else if (text.isEmpty()) {
-            endRun(run, run.finalStatus);
-        } else if (pasteTerminal(text)) {
-            run.terminalSubmittedChars = text.length();
-            endRun(run, "已请求 Termux 粘贴；请核对终端内容后再按回车，文字保留在剪贴板");
-        } else {
-            endRun(run, "终端粘贴请求失败；文字保留在悬浮菜单草稿中");
-        }
+        if (run.finalStatus != null) endRun(run, run.finalStatus);
     }
 
     private void testTerminalPaste(String text) {
@@ -560,6 +761,67 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         message(pasteTerminal(safe)
                 ? "已请求 Termux 粘贴测试文字；请核对终端内容"
                 : "终端粘贴请求失败；请检查焦点和快捷键设置");
+    }
+
+    private AccessibilityNodeInfo terminalWindow(int windowId) {
+        for (AccessibilityWindowInfo window : getWindows()) {
+            if (window.getId() == windowId) return window.getRoot();
+        }
+        return null;
+    }
+
+    private void closeTerminalPanel() {
+        TerminalDraftPanel panel = terminalPanel;
+        if (panel == null) return;
+        if (panel.state.phase() == TerminalDraftState.Phase.EDITING
+                || panel.state.phase() == TerminalDraftState.Phase.SUBMITTING)
+            draft = new StringBuffer(panel.editor.getText().toString());
+        Log.i("VoiceLabTerminal", "closed draftChars=" + draft.length()
+                + " phase=" + panel.state.phase());
+        panel.state.discard();
+        panel.hide();
+        terminalPanel = null;
+    }
+
+    private void awaitTerminal(TerminalDraftPanel panel, String text, long deadlineMs) {
+        if (terminalPanel != panel || panel.state.phase() != TerminalDraftState.Phase.SUBMITTING) return;
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (!panel.state.targetChanged() && root != null
+                && root.getWindowId() == panel.destination.windowId
+                && root.getPackageName() != null
+                && TerminalInputPolicy.PACKAGE.contentEquals(root.getPackageName())
+                && !drawerOpen(root) && panel.destination.node.refresh()
+                && panel.destination.node.isVisibleToUser()) {
+            AccessibilityNodeInfo focus = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+            if (focus == null || !focus.equals(panel.destination.node)) {
+                panel.destination.node.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+            } else {
+                TerminalTarget fresh = currentTerminal(root);
+                if (fresh != null && fresh.node.equals(panel.destination.node)) {
+                    terminalTarget = fresh;
+                    boolean requested = pasteTerminal(text);
+                    terminalTarget = null;
+                    if (requested) {
+                        panel.run.terminalSubmittedChars = text.length();
+                        panel.state.submitted();
+                        terminalPanel = null;
+                        message("已请求 Termux 粘贴；请核对文字后再按回车，草稿保留在剪贴板");
+                        return;
+                    }
+                }
+            }
+        }
+        if (SystemClock.uptimeMillis() < deadlineMs && !panel.state.targetChanged()) {
+            ui.postDelayed(() -> awaitTerminal(panel, text, deadlineMs), 50);
+            return;
+        }
+        terminalTarget = null;
+        panel.state.retry();
+        panel.show();
+        panel.confirm.setEnabled(!panel.state.targetChanged());
+        panel.status.setText(panel.state.targetChanged()
+                ? "终端目标已变化，未粘贴；草稿仍在浮窗中"
+                : "未确认原终端焦点，未粘贴；请回到原终端重试");
     }
 
     private boolean pasteTerminal(String text) {
@@ -649,6 +911,7 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         target = null;
         editorTarget = null;
         terminalTarget = null;
+        if (terminalPanel != null && terminalPanel.run == run) terminalPanel.invalidateTarget();
         message("输入目标或光标已变化；本轮文字保存在悬浮菜单草稿中");
     }
 
