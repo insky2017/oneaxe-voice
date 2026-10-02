@@ -64,6 +64,7 @@ R2T2 使用一份 GPU 权重和独立会话状态，支持 **1 路 PC + 1 路手
 - [多路候选与隔离实验记录](docs/multi-stream-experiment-2026-10-02.md)：两路基线、三路退化、四路积压保护及实测曲线；未扩容生产。
 - [CPU / GPU 预处理对照](docs/preprocessing-study-2026-10-02.md)：CPU 分工、等待开销、GPU 特征实测及优化顺序；尚未部署。
 - [完整两路 CPU / GPU 优化对照](docs/preprocessing-e2e-2026-10-02.md)：被动等待、GPU 特征、CPU 核秒、逐路延迟和取消实测；正式服务未改动。
+- [CPU 被动等待两路长测](docs/cpuwait-longrun-2026-10-03.md)：候选完成两路各 10 分钟，原配置本轮因积压停止；保留失败与比较边界，尚未部署。
 - [验证记录](docs/validation.md)
 - [实施计划](docs/plan.md)
 
