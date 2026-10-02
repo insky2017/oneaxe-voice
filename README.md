@@ -8,8 +8,9 @@
 
 - 已有 **Tailnet 主机与端口配置**。V1 正式识别使用可修改的 DNS 主机 `rtx4090.nase-stairs.ts.net` 与 HTTPS/WSS 端口 `8097`；目前没有裸 IP 产品入口。
 - 用户先自行连接 Pocket/Tailscale；App 只检查连接并显示错误，不启动或重连 VPN。拒绝 localhost、普通局域网/公网目标；不使用 USB 转发、临时代理或本地 SSH。
-- Voice 正式 Tailnet `8097` 入口已部署；[交接记录](/home/sky/tools/oneaxe-voice/docs/pocket-handoff-2026-10-02.md)证明服务端 TLS、认证、真实 WSS 转写及 PC + 移动双流测试。Voice Lab 已实现能力查询、连续 PCM、固定全文提交和取消/流控；当前修复版新增输入框文本与光标写入确认，**21/21 本地单测通过**。
-- 当前已安装 APK SHA-256 `2acc61a56c5e2a4773378e0b348c27adccd057381de65a09a7e7268efa1e0fb3`，测试设备 Pixel 9 Pro XL / Android 17 / API 37。Chrome 连续三轮各 89/89 且前文保留；取消保留 27 字无迟到、左移光标后停止误填、真实麦克风悬浮结束 44/44 且释放。旧版 `b6b3…049e0e` 曾网络恢复后 89/82；最终版同一 Wi-Fi 断开/恢复组合保留 27 字、不自动开始，用户主动重试 89/89 且旧文保留，已知写入确认缺陷按这些回归解决。**旧版 Android 600 秒 + PC 脚本 620 秒长流未在新 APK 重跑**，见[真机记录](../../docs/mobile-workspace/voice-v1-device-acceptance-2026-10-02.md)。V01–V07 未全部通过。旧 WAV 接口仍禁用。
+- Voice 正式 Tailnet `8097` 入口已部署；[交接记录](/home/sky/tools/oneaxe-voice/docs/pocket-handoff-2026-10-02.md)证明服务端 TLS、认证、真实 WSS 转写及 PC + 移动双流测试。Voice Lab 已实现能力查询、连续 PCM、固定全文提交和取消/流控；当前修复版新增输入框文本与光标写入确认，**26/26 本地单测通过**。
+- 当前已安装 APK SHA-256 `371b3cb75a6b6f73d44dbbed8674b95e09a029f6b28a402e3db199e1a6b7d323`。Android 13+ 新增辅助功能输入连接，按光标增量提交并读回确认，不切换默认键盘；修复空框 `selection=-1` 误判，以及微信不暴露节点、未知绝对 offset 的适配。Pixel 9 Pro XL / Android 17 上，微信、ChatGPT PWA、X 搜索、Firefox 地址栏、Keep 和 Gemini 均已完成固定音频输入验证；微信另完成真实麦克风回录 88/88。见[兼容性真机记录](../../docs/mobile-workspace/voice-input-compatibility-2026-10-02.md)。Android 8–12 保留原节点路径，本轮未做这些系统的真机验证。
+- 前一版 Chrome 输入确认、取消和断网恢复，以及更早 APK 的手机/PC 10 分钟固定音频测试，保留在[Voice V1 真机记录](../../docs/mobile-workspace/voice-v1-device-acceptance-2026-10-02.md)；不将历史长流测试写成当前 APK 已重跑。V01–V07 尚未全部通过，旧 WAV 接口仍禁用。
 - “录音检查与回放”可独立使用，不依赖连接，不上传录音；不录音的固定文字输入仍可验证输入适配。
 
 ## 设置与使用

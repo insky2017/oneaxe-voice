@@ -2,6 +2,8 @@
 
 日期：2026-10-02。范围是独立 Voice Lab APK 经用户已建立的 Tailnet 使用 OneAxe Voice 正式移动接口；网络 App 与语音 App 长期独立安装、更新和调试。用户已授权完成客户端及真机验收。本页随验证进展更新；下述局部成功不等于 V01–V07 全部通过。
 
+后续输入兼容修复与当前安装包见 [兼容性真机记录](voice-input-compatibility-2026-10-02.md)。下文 `2acc…e0fb3` 及 21/21 为本页对应阶段的历史版本，不表示当前手机仍安装该包；600/620 秒长流等证据仍归属各自 APK。
+
 ## 依据与环境
 
 - [正式协议](/home/sky/tools/oneaxe-voice/docs/mobile-api-v1.md)与[Voice 交接](/home/sky/tools/oneaxe-voice/docs/pocket-handoff-2026-10-02.md)：Tailnet DNS `rtx4090.nase-stairs.ts.net`、HTTPS/WSS `8097` 已部署；服务端记录 R2T2 ready、TLS/认证/真实 WSS、PC + 移动双流至少 10 分钟。后者是**服务端验证**，不能充作 Android 麦克风、实际输入框或 PC + 手机双端 10 分钟验收。

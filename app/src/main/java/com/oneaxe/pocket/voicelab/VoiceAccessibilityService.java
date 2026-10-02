@@ -2,6 +2,7 @@ package com.oneaxe.pocket.voicelab;
 
 import android.Manifest;
 import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.InputMethod;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -15,9 +16,11 @@ import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.text.InputType;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -25,6 +28,8 @@ import android.view.View;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.SurroundingText;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -42,6 +47,8 @@ public final class VoiceAccessibilityService extends AccessibilityService {
     private TextView bubble;
     private LinearLayout menu;
     private AccessibilityNodeInfo target;
+    private VoiceInputMethod voiceInputMethod;
+    private EditorTarget editorTarget;
     private AccessibilityNodeInfo lastFocused;
     private String expectedText;
     private int cursor;
@@ -66,10 +73,82 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         boolean microphoneFixture;
         FixturePlayback playback;
         InputWriteAck pendingWrite;
+        EditorWriteAck pendingEditorWrite;
         long pendingSinceMs;
         boolean pollScheduled;
         String finalStatus;
         long finalDeadlineMs;
+    }
+
+    private final class VoiceInputMethod extends InputMethod {
+        int generation;
+        int selectionVersion;
+        int selectionStart = -1;
+        int selectionEnd = -1;
+
+        VoiceInputMethod() { super(VoiceAccessibilityService.this); }
+
+        @Override public void onStartInput(EditorInfo info, boolean restarting) {
+            super.onStartInput(info, restarting);
+            generation++;
+            selectionVersion++;
+            selectionStart = info == null ? -1 : info.initialSelStart;
+            selectionEnd = info == null ? -1 : info.initialSelEnd;
+        }
+
+        @Override public void onFinishInput() {
+            generation++;
+            selectionVersion++;
+            selectionStart = -1;
+            selectionEnd = -1;
+            super.onFinishInput();
+        }
+
+        @Override public void onUpdateSelection(int oldStart, int oldEnd, int newStart,
+                int newEnd, int candidatesStart, int candidatesEnd) {
+            super.onUpdateSelection(oldStart, oldEnd, newStart, newEnd, candidatesStart, candidatesEnd);
+            selectionVersion++;
+            selectionStart = newStart;
+            selectionEnd = newEnd;
+        }
+    }
+
+    private static final class EditorSnapshot {
+        final String before;
+        final String after;
+        final int cursor;
+        final boolean absoluteCursor;
+
+        EditorSnapshot(String before, String after, int cursor, boolean absoluteCursor) {
+            this.before = before;
+            this.after = after;
+            this.cursor = cursor;
+            this.absoluteCursor = absoluteCursor;
+        }
+    }
+
+    private static final class EditorTarget {
+        final int generation;
+        final String packageName;
+        final int windowId;
+        EditorSnapshot expected;
+        int expectedSelection;
+        int selectionVersion;
+
+        EditorTarget(int generation, String packageName, int windowId, EditorSnapshot expected,
+                int expectedSelection, int selectionVersion) {
+            this.generation = generation;
+            this.packageName = packageName;
+            this.windowId = windowId;
+            this.expected = expected;
+            this.expectedSelection = expectedSelection;
+            this.selectionVersion = selectionVersion;
+        }
+    }
+
+    @Override public InputMethod onCreateInputMethod() {
+        voiceInputMethod = new VoiceInputMethod();
+        return voiceInputMethod;
     }
 
     @Override protected void onServiceConnected() {
@@ -125,6 +204,7 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         if (source == null) return;
         if (source.isPassword()) lastFocused = null;
         else if (source.isEditable()) lastFocused = source;
+        else if (event.getEventType() == AccessibilityEvent.TYPE_VIEW_FOCUSED) lastFocused = null;
         DictationRun run = activeRun;
         if (run != null && target != null &&
                 event.getEventType() == AccessibilityEvent.TYPE_VIEW_FOCUSED &&
@@ -172,8 +252,8 @@ public final class VoiceAccessibilityService extends AccessibilityService {
             probe.setOnClickListener(view -> {
                 hideMenu();
                 if (prepareTarget()) {
-                    boolean inserted = insert("Voice Lab 测试");
-                    message(inserted ? "测试文字已写入" : "该输入框暂不支持辅助功能写入");
+                    if (editorTarget != null) testEditorInsert("Voice Lab 测试");
+                    else message(insert("Voice Lab 测试") ? "测试文字已写入" : "该输入框暂不支持辅助功能写入");
                 }
             });
             menu.addView(probe);
@@ -347,6 +427,7 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         checkingConnection = false;
         anySessionActive = false;
         target = null;
+        editorTarget = null;
         if (foregroundStarted) stopForeground(STOP_FOREGROUND_REMOVE);
         foregroundStarted = false;
         if (bubble != null) bubble.setText("麦");
@@ -368,6 +449,10 @@ public final class VoiceAccessibilityService extends AccessibilityService {
     private void applyDraft(DictationRun run) {
         if (activeRun != run || run.cancelled) return;
         draft = new StringBuffer(run.transcript.fixed());
+        if (editorTarget != null || run.pendingEditorWrite != null) {
+            applyEditorDraft(run);
+            return;
+        }
         if (run.pendingWrite != null) {
             InputWriteAck ack = run.pendingWrite;
             if (!targetReady()) {
@@ -422,9 +507,245 @@ public final class VoiceAccessibilityService extends AccessibilityService {
     private void detachTarget(DictationRun run, String reason) {
         Log.i("VoiceLabTarget", "input detached reason=" + reason);
         run.pendingWrite = null;
+        run.pendingEditorWrite = null;
         run.transcript.detachTarget();
         target = null;
-        message("目标已变化；本轮文字保存在悬浮菜单草稿中");
+        editorTarget = null;
+        message("输入目标或光标已变化；本轮文字保存在悬浮菜单草稿中");
+    }
+
+    private void applyEditorDraft(DictationRun run) {
+        EditorTarget editor = editorTarget;
+        if (editor == null || !editorReady(editor)) {
+            detachTarget(run, "editor session changed");
+            finishEditorRun(run);
+            return;
+        }
+        EditorSnapshot actual = editorSnapshot(editorConnection());
+        if (actual == null) {
+            detachTarget(run, "editor context unavailable");
+            finishEditorRun(run);
+            return;
+        }
+        if (run.pendingEditorWrite != null) {
+            EditorWriteAck ack = run.pendingEditorWrite;
+            EditorWriteAck.State state = ack.observe(actual.before, actual.after, actual.cursor);
+            if (state == EditorWriteAck.State.CONFIRMED) {
+                editor.expected = actual;
+                if (editor.expectedSelection >= 0) editor.expectedSelection += ack.addition.length();
+                editor.selectionVersion = voiceInputMethod.selectionVersion;
+                run.transcript.inserted(ack.addition);
+                run.pendingEditorWrite = null;
+                Log.i("VoiceLabSession", "input receivedChars=" + run.transcript.fixed().length()
+                        + " insertedChars=" + run.transcript.insertedLength());
+            } else if (state == EditorWriteAck.State.WAITING
+                    && SystemClock.uptimeMillis() - run.pendingSinceMs < 600
+                    && (run.finalStatus == null || SystemClock.uptimeMillis() < run.finalDeadlineMs)) {
+                scheduleInputPoll(run);
+                return;
+            } else {
+                Log.i("VoiceLabTarget", "editor write unconfirmed state=" + state
+                        + " additionLength=" + ack.addition.length());
+                detachTarget(run, "editor write unconfirmed");
+                finishEditorRun(run);
+                return;
+            }
+        }
+        String addition = run.transcript.addition();
+        if (!addition.isEmpty()) {
+            if (run.finalStatus != null && SystemClock.uptimeMillis() >= run.finalDeadlineMs) {
+                detachTarget(run, "final editor write deadline");
+            } else if (!sameEditorContext(editor.expected, actual)
+                    || !editorSelectionUnchanged(editor) || !commitEditor(editor, addition)) {
+                detachTarget(run, "editor context or cursor changed");
+            } else {
+                run.pendingEditorWrite = new EditorWriteAck(actual.before, actual.after, actual.cursor,
+                        addition, actual.absoluteCursor);
+                run.pendingSinceMs = SystemClock.uptimeMillis();
+                scheduleInputPoll(run);
+            }
+        }
+        finishEditorRun(run);
+    }
+
+    private void finishEditorRun(DictationRun run) {
+        if (run.finalStatus != null && run.pendingEditorWrite == null) {
+            endRun(run, run.transcript.insertedLength() == run.transcript.fixed().length()
+                    ? run.finalStatus : "听写结束；未写入的文字保留在悬浮菜单草稿中");
+        }
+    }
+
+    private boolean commitEditor(EditorTarget editor, String addition) {
+        if (!editorReady(editor)) return false;
+        try {
+            InputMethod.AccessibilityInputConnection connection = editorConnection();
+            if (connection == null) return false;
+            connection.commitText(addition, 1, null);
+            return true;
+        } catch (RuntimeException e) {
+            Log.i("VoiceLabTarget", "editor commit failed type=" + e.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    private void testEditorInsert(String addition) {
+        EditorTarget editor = editorTarget;
+        if (editor == null || !editorReady(editor)) {
+            message("输入框已失去焦点，请重新点选");
+            return;
+        }
+        EditorSnapshot before = editorSnapshot(editorConnection());
+        if (before == null || !sameEditorContext(editor.expected, before)
+                || !editorSelectionUnchanged(editor) || !commitEditor(editor, addition)) {
+            message("该输入框暂不支持写入");
+            return;
+        }
+        Log.i("VoiceLabTarget", "probe editor committed beforeCursor=" + before.cursor
+                + " beforeChars=" + before.before.length() + " afterChars=" + before.after.length()
+                + " additionLength=" + addition.length());
+        EditorWriteAck ack = new EditorWriteAck(before.before, before.after, before.cursor,
+                addition, before.absoluteCursor);
+        long deadline = SystemClock.uptimeMillis() + 600;
+        Runnable poll = new Runnable() {
+            @Override public void run() {
+                if (!editorReady(editor)) { message("输入框已变化，无法确认写入"); return; }
+                EditorSnapshot actual = editorSnapshot(editorConnection());
+                if (actual == null) { message("无法读取输入结果"); return; }
+                EditorWriteAck.State state = ack.observe(actual.before, actual.after, actual.cursor);
+                if (state != EditorWriteAck.State.WAITING || SystemClock.uptimeMillis() >= deadline) {
+                    Log.i("VoiceLabTarget", "probe editor result=" + state
+                            + " beforeCursor=" + before.cursor + " afterCursor=" + actual.cursor
+                            + " beforeChars=" + actual.before.length() + " afterChars=" + actual.after.length()
+                            + " additionLength=" + addition.length());
+                }
+                if (state == EditorWriteAck.State.CONFIRMED) {
+                    editor.expected = actual;
+                    if (editor.expectedSelection >= 0) editor.expectedSelection += addition.length();
+                    editor.selectionVersion = voiceInputMethod.selectionVersion;
+                    message("测试文字已写入");
+                } else if (state == EditorWriteAck.State.WAITING && SystemClock.uptimeMillis() < deadline) {
+                    ui.postDelayed(this, 40);
+                } else message("该输入框未确认写入；请检查框内文字");
+            }
+        };
+        ui.postDelayed(poll, 40);
+    }
+
+    private static boolean sameEditorContext(EditorSnapshot a, EditorSnapshot b) {
+        return a.cursor == b.cursor && a.absoluteCursor == b.absoluteCursor
+                && a.before.equals(b.before) && a.after.equals(b.after);
+    }
+
+    private boolean editorSelectionUnchanged(EditorTarget editor) {
+        if (voiceInputMethod.selectionVersion == editor.selectionVersion
+                || editor.expectedSelection < 0) return true;
+        boolean unchanged = voiceInputMethod.selectionStart == editor.expectedSelection
+                && voiceInputMethod.selectionEnd == editor.expectedSelection;
+        if (!unchanged) Log.i("VoiceLabTarget", "editor selection changed expected="
+                + editor.expectedSelection + " actual=" + voiceInputMethod.selectionStart
+                + ":" + voiceInputMethod.selectionEnd);
+        return unchanged;
+    }
+
+    private boolean editorReady(EditorTarget editor) {
+        if (Build.VERSION.SDK_INT < 33 || cancelled || voiceInputMethod == null) return false;
+        boolean started = voiceInputMethod.getCurrentInputStarted();
+        boolean generationMatch = voiceInputMethod.generation == editor.generation;
+        boolean connectionPresent = editorConnection() != null;
+        if (!started || !generationMatch || !connectionPresent) {
+            Log.i("VoiceLabTarget", "editor session invalid started=" + started
+                    + " generationMatch=" + generationMatch + " connection=" + connectionPresent);
+            return false;
+        }
+        EditorInfo info = voiceInputMethod.getCurrentInputEditorInfo();
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (info == null || !editor.packageName.equals(info.packageName) || passwordInput(info)
+                || root == null || root.getWindowId() != editor.windowId
+                || root.getPackageName() == null
+                || !editor.packageName.contentEquals(root.getPackageName())) {
+            Log.i("VoiceLabTarget", "editor target invalid info=" + (info != null)
+                    + " packageMatch=" + (info != null && editor.packageName.equals(info.packageName))
+                    + " windowMatch=" + (root != null && root.getWindowId() == editor.windowId));
+            return false;
+        }
+        AccessibilityNodeInfo focus = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+        return focus == null || !focus.isPassword();
+    }
+
+    private InputMethod.AccessibilityInputConnection editorConnection() {
+        return voiceInputMethod == null ? null : voiceInputMethod.getCurrentInputConnection();
+    }
+
+    private EditorTarget currentEditor(AccessibilityNodeInfo root) {
+        if (Build.VERSION.SDK_INT < 33 || root == null) return null;
+        if (ensureVoiceInputMethod() == null) return null;
+        EditorInfo info = voiceInputMethod.getCurrentInputEditorInfo();
+        InputMethod.AccessibilityInputConnection connection = voiceInputMethod.getCurrentInputConnection();
+        if (!voiceInputMethod.getCurrentInputStarted() || info == null || passwordInput(info)
+                || info.packageName == null || root.getPackageName() == null
+                || !info.packageName.contentEquals(root.getPackageName()) || connection == null) {
+            Log.i("VoiceLabTarget", "editor API not ready started=" + voiceInputMethod.getCurrentInputStarted()
+                    + " info=" + (info != null) + " connection=" + (connection != null)
+                    + " packageMatch=" + (info != null && info.packageName != null
+                    && root.getPackageName() != null && info.packageName.contentEquals(root.getPackageName())));
+            return null;
+        }
+        EditorSnapshot snapshot = editorSnapshot(connection);
+        if (snapshot == null) {
+            Log.i("VoiceLabTarget", "editor context has no readable collapsed selection");
+            return null;
+        }
+        return new EditorTarget(voiceInputMethod.generation, info.packageName,
+                root.getWindowId(), snapshot, voiceInputMethod.selectionStart,
+                voiceInputMethod.selectionVersion);
+    }
+
+    private VoiceInputMethod ensureVoiceInputMethod() {
+        if (Build.VERSION.SDK_INT < 33) return null;
+        if (voiceInputMethod != null) return voiceInputMethod;
+        try {
+            InputMethod method = getInputMethod();
+            if (method instanceof VoiceInputMethod) voiceInputMethod = (VoiceInputMethod) method;
+        } catch (RuntimeException e) {
+            Log.i("VoiceLabTarget", "editor API unavailable type=" + e.getClass().getSimpleName());
+        }
+        return voiceInputMethod;
+    }
+
+    private static boolean passwordInput(EditorInfo info) {
+        return EditorInputPolicy.blocked(info.inputType);
+    }
+
+    private static EditorSnapshot editorSnapshot(InputMethod.AccessibilityInputConnection connection) {
+        if (connection == null) {
+            Log.i("VoiceLabTarget", "editor context unavailable connection=null");
+            return null;
+        }
+        try {
+            SurroundingText context = connection.getSurroundingText(
+                    EditorWriteAck.CONTEXT_CHARS, EditorWriteAck.CONTEXT_CHARS, 0);
+            if (context == null) {
+                Log.i("VoiceLabTarget", "editor context unavailable result=null");
+                return null;
+            }
+            CharSequence text = context.getText();
+            if (text == null || context.getSelectionStart() < 0
+                    || context.getSelectionStart() != context.getSelectionEnd()
+                    || context.getSelectionEnd() > text.length()) {
+                Log.i("VoiceLabTarget", "editor context invalid offset=" + context.getOffset()
+                        + " selection=" + context.getSelectionStart() + ":" + context.getSelectionEnd()
+                        + " textChars=" + (text == null ? -1 : text.length()));
+                return null;
+            }
+            int selection = context.getSelectionStart();
+            boolean absolute = context.getOffset() >= 0;
+            return new EditorSnapshot(text.subSequence(0, selection).toString(),
+                    text.subSequence(selection, text.length()).toString(),
+                    absolute ? context.getOffset() + selection : selection, absolute);
+        } catch (RuntimeException e) {
+            Log.i("VoiceLabTarget", "editor context unavailable type=" + e.getClass().getSimpleName());
+            return null;
+        }
     }
 
     private boolean targetReady() {
@@ -462,22 +783,54 @@ public final class VoiceAccessibilityService extends AccessibilityService {
     private boolean prepareTarget() {
         cancelled = false;
         target = null;
+        editorTarget = null;
         AccessibilityNodeInfo root = getRootInActiveWindow();
         AccessibilityNodeInfo focused = root == null ? null : root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
-        if (focused == null || !focused.isEditable()) focused = lastFocused;
+        if (focused != null && focused.isPassword()) {
+            message("密码输入框不支持听写");
+            return false;
+        }
+        VoiceInputMethod method = ensureVoiceInputMethod();
+        if (method != null && method.getCurrentInputStarted()) {
+            EditorInfo info = method.getCurrentInputEditorInfo();
+            if (info != null && passwordInput(info)) {
+                message((info.inputType & InputType.TYPE_MASK_CLASS) == InputType.TYPE_NULL
+                        ? "该输入框未提供可验证的输入类型" : "密码输入框不支持听写");
+                return false;
+            }
+        }
+        EditorTarget editor = currentEditor(root);
+        if (editor != null) {
+            editorTarget = editor;
+            Log.i("VoiceLabTarget", "editor input attached window=" + editor.windowId);
+            return true;
+        }
+        if (focused == null || !focused.isEditable()) {
+            focused = lastFocused;
+            if (focused != null && (!focused.refresh() || !focused.isFocused()
+                    || root == null || root.getPackageName() == null
+                    || focused.getPackageName() == null
+                    || !root.getPackageName().toString().contentEquals(focused.getPackageName()))) {
+                focused = null;
+            }
+        }
         Log.i("VoiceLabTarget", "root=" + (root == null ? -1 : root.getWindowId()) +
                 " focused=" + (focused != null) + " editable=" + (focused != null && focused.isEditable()) +
                 " selection=" + (focused == null ? -2 : focused.getTextSelectionStart()));
         if (focused == null || root == null || root.getWindowId() != focused.getWindowId() ||
-                !focused.isEditable() || focused.isPassword() ||
-                focused.getTextSelectionStart() < 0 && !focused.isShowingHintText()) {
-            message("请先选中标准可编辑输入框"); return false;
+                !focused.isEditable() || !focused.isFocused() || focused.isPassword() ||
+                focused.getTextSelectionStart() < 0 && !emptyEditor(focused)) {
+            message("请先选中可编辑输入框，或点击输入框显示光标"); return false;
         }
         target = focused;
         targetWindow = focused.getWindowId();
         expectedText = focused.isShowingHintText() || focused.getText() == null ? "" : focused.getText().toString();
         cursor = Math.max(0, focused.getTextSelectionStart());
         return true;
+    }
+
+    private boolean emptyEditor(AccessibilityNodeInfo node) {
+        return node.isShowingHintText() || node.getText() == null || node.getText().length() == 0;
     }
 
     private void captureLoop(DictationRun run) {
