@@ -23,6 +23,9 @@ import android.os.SystemClock;
 import android.text.InputType;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.InputDevice;
+import android.view.KeyCharacterMap;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
@@ -36,6 +39,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 import java.io.File;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.locks.LockSupport;
 
 public final class VoiceAccessibilityService extends AccessibilityService {
@@ -49,6 +53,7 @@ public final class VoiceAccessibilityService extends AccessibilityService {
     private AccessibilityNodeInfo target;
     private VoiceInputMethod voiceInputMethod;
     private EditorTarget editorTarget;
+    private TerminalTarget terminalTarget;
     private AccessibilityNodeInfo lastFocused;
     private String expectedText;
     private int cursor;
@@ -74,6 +79,8 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         FixturePlayback playback;
         InputWriteAck pendingWrite;
         EditorWriteAck pendingEditorWrite;
+        int terminalSubmittedChars;
+        boolean terminalPasteAttempted;
         long pendingSinceMs;
         boolean pollScheduled;
         String finalStatus;
@@ -146,6 +153,18 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         }
     }
 
+    private static final class TerminalTarget {
+        final int generation;
+        final int windowId;
+        final AccessibilityNodeInfo node;
+
+        TerminalTarget(int generation, int windowId, AccessibilityNodeInfo node) {
+            this.generation = generation;
+            this.windowId = windowId;
+            this.node = node;
+        }
+    }
+
     @Override public InputMethod onCreateInputMethod() {
         voiceInputMethod = new VoiceInputMethod();
         return voiceInputMethod;
@@ -198,6 +217,14 @@ public final class VoiceAccessibilityService extends AccessibilityService {
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
+        DictationRun terminalRun = activeRun;
+        if (terminalRun != null && terminalTarget != null
+                && (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                || event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                || event.getEventType() == AccessibilityEvent.TYPE_VIEW_FOCUSED)
+                && !terminalReady()) {
+            detachTarget(terminalRun, "terminal target changed");
+        }
         if (event.getEventType() != AccessibilityEvent.TYPE_VIEW_FOCUSED &&
                 event.getEventType() != AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED) return;
         AccessibilityNodeInfo source = event.getSource();
@@ -252,7 +279,8 @@ public final class VoiceAccessibilityService extends AccessibilityService {
             probe.setOnClickListener(view -> {
                 hideMenu();
                 if (prepareTarget()) {
-                    if (editorTarget != null) testEditorInsert("Voice Lab 测试");
+                    if (terminalTarget != null) testTerminalPaste("Voice Lab 测试");
+                    else if (editorTarget != null) testEditorInsert("Voice Lab 测试");
                     else message(insert("Voice Lab 测试") ? "测试文字已写入" : "该输入框暂不支持辅助功能写入");
                 }
             });
@@ -316,6 +344,7 @@ public final class VoiceAccessibilityService extends AccessibilityService {
             return;
         }
         if (!prepareTarget()) return;
+        if (terminalTarget != null) message("终端模式：听写结束后一次粘贴，文字同时保留在剪贴板");
         DictationRun run = new DictationRun();
         run.fixtureSeconds = fixtureSeconds;
         run.microphoneFixture = microphoneFixture;
@@ -414,7 +443,8 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         // Close both receive and input gates before the transport or old callbacks can race us.
         run.transcript.close();
         Log.i("VoiceLabSession", "ended receivedChars=" + run.transcript.fixed().length()
-                + " insertedChars=" + run.transcript.insertedLength() + " status=" + status);
+                + " insertedChars=" + run.transcript.insertedLength()
+                + " terminalSubmittedChars=" + run.terminalSubmittedChars + " status=" + status);
         draft = new StringBuffer(run.transcript.fixed());
         run.cancelled = true;
         activeRun = null;
@@ -428,6 +458,7 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         anySessionActive = false;
         target = null;
         editorTarget = null;
+        terminalTarget = null;
         if (foregroundStarted) stopForeground(STOP_FOREGROUND_REMOVE);
         foregroundStarted = false;
         if (bubble != null) bubble.setText("麦");
@@ -449,6 +480,10 @@ public final class VoiceAccessibilityService extends AccessibilityService {
     private void applyDraft(DictationRun run) {
         if (activeRun != run || run.cancelled) return;
         draft = new StringBuffer(run.transcript.fixed());
+        if (terminalTarget != null) {
+            applyTerminalDraft(run);
+            return;
+        }
         if (editorTarget != null || run.pendingEditorWrite != null) {
             applyEditorDraft(run);
             return;
@@ -495,6 +530,108 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         }
     }
 
+    private void applyTerminalDraft(DictationRun run) {
+        if (!terminalReady()) {
+            detachTarget(run, "terminal target changed");
+            if (run.finalStatus != null) endRun(run, "终端目标已变化；文字保留在悬浮菜单草稿中");
+            return;
+        }
+        if (run.finalStatus == null || run.terminalPasteAttempted) return;
+        run.terminalPasteAttempted = true;
+        String text = TerminalInputPolicy.pasteText(run.transcript.fixed());
+        if (text == null) {
+            endRun(run, "文字含终端控制字符，未粘贴；完整文字保留在草稿中");
+        } else if (text.isEmpty()) {
+            endRun(run, run.finalStatus);
+        } else if (pasteTerminal(text)) {
+            run.terminalSubmittedChars = text.length();
+            endRun(run, "已请求 Termux 粘贴；请核对终端内容后再按回车，文字保留在剪贴板");
+        } else {
+            endRun(run, "终端粘贴请求失败；文字保留在悬浮菜单草稿中");
+        }
+    }
+
+    private void testTerminalPaste(String text) {
+        String safe = TerminalInputPolicy.pasteText(text);
+        if (safe == null || safe.isEmpty() || !terminalReady()) {
+            message("终端目标已变化或测试文字无效");
+            return;
+        }
+        message(pasteTerminal(safe)
+                ? "已请求 Termux 粘贴测试文字；请核对终端内容"
+                : "终端粘贴请求失败；请检查焦点和快捷键设置");
+    }
+
+    private boolean pasteTerminal(String text) {
+        if (text.isEmpty() || !terminalReady()) return false;
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        InputMethod.AccessibilityInputConnection connection = editorConnection();
+        if (clipboard == null || connection == null) return false;
+        try {
+            clipboard.setPrimaryClip(ClipData.newPlainText("Voice Lab", text));
+            if (!terminalReady()) return false;
+            long now = SystemClock.uptimeMillis();
+            int modifiers = KeyEvent.META_CTRL_ON | KeyEvent.META_ALT_ON;
+            connection.sendKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN,
+                    KeyEvent.KEYCODE_V, 0, modifiers, KeyCharacterMap.VIRTUAL_KEYBOARD,
+                    0, 0, InputDevice.SOURCE_KEYBOARD));
+            connection.sendKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP,
+                    KeyEvent.KEYCODE_V, 0, modifiers, KeyCharacterMap.VIRTUAL_KEYBOARD,
+                    0, 0, InputDevice.SOURCE_KEYBOARD));
+            Log.i("VoiceLabTarget", "terminal paste requested chars=" + text.length());
+            return true;
+        } catch (RuntimeException e) {
+            Log.i("VoiceLabTarget", "terminal paste request failed type=" + e.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    private boolean terminalReady() {
+        TerminalTarget terminal = terminalTarget;
+        if (Build.VERSION.SDK_INT < 33 || cancelled || terminal == null || voiceInputMethod == null
+                || !voiceInputMethod.getCurrentInputStarted()
+                || voiceInputMethod.generation != terminal.generation
+                || editorConnection() == null) return false;
+        EditorInfo info = voiceInputMethod.getCurrentInputEditorInfo();
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (info == null || !TerminalInputPolicy.PACKAGE.equals(info.packageName)
+                || !TerminalInputPolicy.inputType(info.inputType) || root == null
+                || root.getWindowId() != terminal.windowId
+                || root.getPackageName() == null
+                || !TerminalInputPolicy.PACKAGE.contentEquals(root.getPackageName())
+                || drawerOpen(root) || !terminal.node.refresh() || !terminal.node.isFocused()
+                || terminal.node.isPassword() || !terminal.node.isVisibleToUser()
+                || terminal.node.getWindowId() != terminal.windowId
+                || !TerminalInputPolicy.VIEW_ID.equals(terminal.node.getViewIdResourceName())) return false;
+        AccessibilityNodeInfo focus = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+        return focus != null && focus.equals(terminal.node);
+    }
+
+    private static boolean drawerOpen(AccessibilityNodeInfo root) {
+        List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByViewId(TerminalInputPolicy.DRAWER_ID);
+        for (AccessibilityNodeInfo node : nodes) {
+            if (node.isVisibleToUser()) return true;
+        }
+        return false;
+    }
+
+    private TerminalTarget currentTerminal(AccessibilityNodeInfo root) {
+        if (Build.VERSION.SDK_INT < 33 || root == null || drawerOpen(root)
+                || root.getPackageName() == null
+                || !TerminalInputPolicy.PACKAGE.contentEquals(root.getPackageName())) return null;
+        VoiceInputMethod method = ensureVoiceInputMethod();
+        if (method == null || !method.getCurrentInputStarted()) return null;
+        EditorInfo info = method.getCurrentInputEditorInfo();
+        if (info == null || !TerminalInputPolicy.PACKAGE.equals(info.packageName)
+                || !TerminalInputPolicy.inputType(info.inputType)
+                || method.getCurrentInputConnection() == null) return null;
+        AccessibilityNodeInfo node = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+        if (node == null || !node.isFocused() || !node.isVisibleToUser()
+                || node.isPassword()
+                || !TerminalInputPolicy.VIEW_ID.equals(node.getViewIdResourceName())) return null;
+        return new TerminalTarget(method.generation, root.getWindowId(), node);
+    }
+
     private void scheduleInputPoll(DictationRun run) {
         if (run.pollScheduled) return;
         run.pollScheduled = true;
@@ -511,6 +648,7 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         run.transcript.detachTarget();
         target = null;
         editorTarget = null;
+        terminalTarget = null;
         message("输入目标或光标已变化；本轮文字保存在悬浮菜单草稿中");
     }
 
@@ -784,11 +922,18 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         cancelled = false;
         target = null;
         editorTarget = null;
+        terminalTarget = null;
         AccessibilityNodeInfo root = getRootInActiveWindow();
         AccessibilityNodeInfo focused = root == null ? null : root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
         if (focused != null && focused.isPassword()) {
             message("密码输入框不支持听写");
             return false;
+        }
+        TerminalTarget terminal = currentTerminal(root);
+        if (terminal != null) {
+            terminalTarget = terminal;
+            Log.i("VoiceLabTarget", "terminal input attached window=" + terminal.windowId);
+            return true;
         }
         VoiceInputMethod method = ensureVoiceInputMethod();
         if (method != null && method.getCurrentInputStarted()) {
