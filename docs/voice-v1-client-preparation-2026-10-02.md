@@ -29,11 +29,11 @@
 契约文件 SHA-256：`3e24eb5cf02295d79bf3c3c80f82090a859f746170cca3c50d1874cf8945278a`。测试模拟该定稿契约，不预设未来推理性能或实际服务可用性。
 
 ```bash
-cd /home/sky/tools/oneaxe-pocket/experiments/voice-lab
-ANDROID_HOME=/home/sky/tools/android /home/sky/tools/oneaxe-pocket/android/gradlew --offline --no-daemon :app:testDebugUnitTest :app:assembleDebug
+cd /home/sky/work/touzi/OneAxe/oneaxe-voice-android
+ANDROID_HOME=/home/sky/tools/android ./gradlew --offline --no-daemon :app:testDebugUnitTest :app:assembleDebug
 ```
 
-结果：`BUILD SUCCESSFUL`，退出码 `0`。最终构建复用同源码已通过的单元测试结果（Gradle `UP-TO-DATE`）；产物为 [候选 APK](../../experiments/voice-lab/app/build/outputs/apk/debug/app-debug.apk)，SHA-256 为 `4464ec01a2ae95d935ce9de64f0630e6077a35a489bc4ff6694b6ee725d62443`。
+结果：`BUILD SUCCESSFUL`，退出码 `0`。最终构建复用同源码已通过的单元测试结果（Gradle `UP-TO-DATE`）；产物为 [候选 APK](../app/build/outputs/apk/debug/app-debug.apk)，SHA-256 为 `4464ec01a2ae95d935ce9de64f0630e6077a35a489bc4ff6694b6ee725d62443`。
 
 | 测试组 | 数量 | 主要覆盖 |
 | --- | --- | --- |

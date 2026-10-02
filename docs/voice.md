@@ -2,7 +2,7 @@
 
 **2026-10-02 更正：** 用户明确手机无模型控制权，只使用 PC 当前已加载模型，并要求调查双端同时使用；本轮不修改解析服务端。下文短 WAV 优先路线已不符合该模型约束，不能继续作为实施建议；现有短 WAV 会隐式切到 `vad`，WS 又有整轮独占与模式选择。新增事实及候选见 [接入复核](voice-connection-review-2026-10-02.md)，验收扩展为 V01–V06。旧研究结果保留，不代表功能已满足。
 
-**需求更新后的阅读说明：** 以 [本轮技术方案](technical-proposal.md) 和 [V01–V03](e2e-test-plan.md) 为准：必须验证悬浮控件向原选中框输入，剪贴板仅是救援，不是通过标准；先研究简单输入适配，必要时由用户审核轻量 IME。下文的先分享/复制、完整设备代理与后续流式等建议保留作参考，不自动纳入首版。
+**需求更新后的阅读说明：** 以 [本轮技术方案](/home/sky/work/touzi/OneAxe/oneaxe-pocket/docs/mobile-workspace/technical-proposal.md) 和 [V01–V03](/home/sky/work/touzi/OneAxe/oneaxe-pocket/docs/mobile-workspace/e2e-test-plan.md) 为准：必须验证悬浮控件向原选中框输入，剪贴板仅是救援，不是通过标准；先研究简单输入适配，必要时由用户审核轻量 IME。下文的先分享/复制、完整设备代理与后续流式等建议保留作参考，不自动纳入首版。
 
 核查日期：2026-10-01。源码为 `/home/sky/tools/oneaxe-voice`，HEAD `7a84c1e`，工作树干净。本报告只读；没有读取令牌、原始录音或转写文件，也没有修改或重启服务。`oneaxe-voice.service` 与桌面服务当前均为 `active`，`8097` 只监听 `127.0.0.1`，本机 `/health` 返回 HTTP 200；这只能证明服务存活，不能证明当前 CUDA 模型就绪或手机链路可用。
 

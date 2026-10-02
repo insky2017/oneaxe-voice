@@ -67,6 +67,6 @@
 | V06 跨网 Tailnet 直连 | **局部执行中，完整用例未通过**：正式入口手机链路可用；最终版同一设备断 Wi-Fi 后不自动开始、主动重试成功 | 手机移动数据/热点与 PC 不同网络及更多错误分型；当前缺 SIM/热点条件 |
 | V07 设置和诊断 | **局部执行中，完整用例未通过**：正式能力查询成功，错设备 token 明确拒绝、恢复真 token 后通过 | 当前 APK 配置持久化、无效/断开端点、TLS 错误与凭据更换；确认没有远端 `/health` |
 
-后续按 [E2E 用例](e2e-test-plan.md)补真实双麦克风/桌面输入、权限撤销与剩余异常。跨不同网络需 SIM/热点条件，缺环境时标阻塞。真人试录应在固定音频和自动化采集稳定后安排；不要用用户反复试说来代替排查。所有令牌、私人录音和完整私人转写不得写入本页。
+后续按 [E2E 用例](/home/sky/work/touzi/OneAxe/oneaxe-pocket/docs/mobile-workspace/e2e-test-plan.md)补真实双麦克风/桌面输入、权限撤销与剩余异常。跨不同网络需 SIM/热点条件，缺环境时标阻塞。真人试录应在固定音频和自动化采集稳定后安排；不要用用户反复试说来代替排查。所有令牌、私人录音和完整私人转写不得写入本页。
 
 结束清理见[最终环境记录](/home/sky/.local/state/oneaxe-pocket/voice-v1-device-20261002/final-state.json)：能力查询 ready，Wi-Fi 已恢复，`stay_awake` 还原为 0，测试 fixture 已移除，ADB reverse 为空；PC desktop idle、模型仍已加载且 worker PID `313684`，无活跃会话，`thsauto` 保持原有 inactive 状态。临时日志监听与测试表单服务已停止。这是本轮环境收尾，不代表未覆盖用例通过。

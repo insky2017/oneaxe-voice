@@ -4,3 +4,9 @@ app/build/
 local.properties
 __pycache__/
 *.pyc
+artifacts/
+*.apk
+*.env
+*.token
+*.jks
+*.keystore
