@@ -17,6 +17,7 @@ import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -61,6 +62,14 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         volatile AudioRecord audio;
         volatile Thread thread;
         volatile VoiceClient.Stream stream;
+        int fixtureSeconds;
+        boolean microphoneFixture;
+        FixturePlayback playback;
+        InputWriteAck pendingWrite;
+        long pendingSinceMs;
+        boolean pollScheduled;
+        String finalStatus;
+        long finalDeadlineMs;
     }
 
     @Override protected void onServiceConnected() {
@@ -173,6 +182,14 @@ public final class VoiceAccessibilityService extends AccessibilityService {
                 fixture.setText("运行测试音频");
                 fixture.setOnClickListener(view -> { hideMenu(); startFixture(); });
                 menu.addView(fixture);
+                Button microphone = new Button(this);
+                microphone.setText("播放样本并听写");
+                microphone.setOnClickListener(view -> { hideMenu(); openDictation(false, 0, true); });
+                menu.addView(microphone);
+                Button continuous = new Button(this);
+                continuous.setText("循环测试音频（10 分钟）");
+                continuous.setOnClickListener(view -> { hideMenu(); openDictation(true, 600); });
+                menu.addView(continuous);
             }
         }
         DictationRun previewRun = activeRun;
@@ -208,7 +225,11 @@ public final class VoiceAccessibilityService extends AccessibilityService {
     private void startRecording() { openDictation(false); }
     private void startFixture() { openDictation(true); }
 
-    private void openDictation(boolean fixture) {
+    private void openDictation(boolean fixture) { openDictation(fixture, 0); }
+
+    private void openDictation(boolean fixture, int fixtureSeconds) { openDictation(fixture, fixtureSeconds, false); }
+
+    private void openDictation(boolean fixture, int fixtureSeconds, boolean microphoneFixture) {
         if (activeRun != null || checkingConnection) return;
         if (!fixture && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             message("请先在 Voice Lab 授予麦克风权限");
@@ -216,12 +237,15 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         }
         if (!prepareTarget()) return;
         DictationRun run = new DictationRun();
+        run.fixtureSeconds = fixtureSeconds;
+        run.microphoneFixture = microphoneFixture;
         activeRun = run;
         checkingConnection = true;
         sessionActive = true;
         anySessionActive = true;
         cancelled = false;
         draft = new StringBuffer();
+        Log.i("VoiceLabSession", "opening fixture=" + fixture + " repeatSeconds=" + fixtureSeconds);
         bubble.setText("连");
         new Thread(() -> {
             try {
@@ -238,7 +262,13 @@ public final class VoiceAccessibilityService extends AccessibilityService {
                         ui.post(() -> applyDraft(run));
                     }
                     @Override public void onTerminal(String status, boolean complete) {
-                        ui.post(() -> endRun(run, status));
+                        ui.post(() -> {
+                            if (activeRun != run) return;
+                            if (!complete) { endRun(run, status); return; }
+                            run.finalStatus = status;
+                            run.finalDeadlineMs = SystemClock.uptimeMillis() + 2000;
+                            applyDraft(run);
+                        });
                     }
                 }, run.opening);
                 run.stream = stream;
@@ -285,6 +315,7 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         DictationRun run = activeRun;
         if (run == null) return;
         recording = false;
+        if (run.playback != null) run.playback.cancel();
         stopCapture(run);
         if (bubble != null) bubble.setText("收");
     }
@@ -302,10 +333,13 @@ public final class VoiceAccessibilityService extends AccessibilityService {
         if (activeRun != run) return;
         // Close both receive and input gates before the transport or old callbacks can race us.
         run.transcript.close();
+        Log.i("VoiceLabSession", "ended receivedChars=" + run.transcript.fixed().length()
+                + " insertedChars=" + run.transcript.insertedLength() + " status=" + status);
         draft = new StringBuffer(run.transcript.fixed());
         run.cancelled = true;
         activeRun = null;
         run.opening.cancel();
+        if (run.playback != null) run.playback.cancel();
         stopCapture(run);
         if (run.stream != null) run.stream.cancel();
         recording = false;
@@ -334,15 +368,95 @@ public final class VoiceAccessibilityService extends AccessibilityService {
     private void applyDraft(DictationRun run) {
         if (activeRun != run || run.cancelled) return;
         draft = new StringBuffer(run.transcript.fixed());
-        String addition = run.transcript.addition();
-        if (addition.isEmpty()) return;
-        if (target != null && insert(addition)) {
-            run.transcript.inserted(addition);
-        } else {
-            run.transcript.detachTarget();
-            target = null;
-            message("目标已变化；本轮文字保存在悬浮菜单草稿中");
+        if (run.pendingWrite != null) {
+            InputWriteAck ack = run.pendingWrite;
+            if (!targetReady()) {
+                detachTarget(run, "inactive target");
+            } else {
+                String actual = target.isShowingHintText() || target.getText() == null ? "" : target.getText().toString();
+                int start = target.getTextSelectionStart();
+                int end = target.getTextSelectionEnd();
+                InputWriteAck.State state = ack.observe(actual, start, end);
+                if (state == InputWriteAck.State.CONFIRMED) {
+                    expectedText = ack.after;
+                    cursor = ack.afterCursor;
+                    run.transcript.inserted(ack.addition);
+                    run.pendingWrite = null;
+                    Log.i("VoiceLabSession", "input receivedChars=" + run.transcript.fixed().length()
+                            + " insertedChars=" + run.transcript.insertedLength());
+                } else if (state == InputWriteAck.State.WAITING
+                        && SystemClock.uptimeMillis() - run.pendingSinceMs < 600
+                        && (run.finalStatus == null || SystemClock.uptimeMillis() < run.finalDeadlineMs)) {
+                    scheduleInputPoll(run);
+                    return;
+                } else {
+                    Log.i("VoiceLabTarget", "write unconfirmed state=" + state
+                            + " expectedLength=" + ack.after.length() + " actualLength=" + actual.length()
+                            + " expectedCursor=" + ack.afterCursor + " selection=" + start + ":" + end);
+                    detachTarget(run, "write unconfirmed");
+                }
+            }
         }
+        String addition = run.transcript.addition();
+        if (target != null && !addition.isEmpty()) {
+            if (run.finalStatus != null && SystemClock.uptimeMillis() >= run.finalDeadlineMs)
+                detachTarget(run, "final write deadline");
+            else if (beginWrite(run, addition)) scheduleInputPoll(run);
+            else detachTarget(run, "content or cursor changed");
+        }
+        if (run.finalStatus != null && run.pendingWrite == null) {
+            endRun(run, run.transcript.insertedLength() == run.transcript.fixed().length()
+                    ? run.finalStatus : "听写结束；未写入的文字保留在悬浮菜单草稿中");
+        }
+    }
+
+    private void scheduleInputPoll(DictationRun run) {
+        if (run.pollScheduled) return;
+        run.pollScheduled = true;
+        ui.postDelayed(() -> {
+            run.pollScheduled = false;
+            applyDraft(run);
+        }, 40);
+    }
+
+    private void detachTarget(DictationRun run, String reason) {
+        Log.i("VoiceLabTarget", "input detached reason=" + reason);
+        run.pendingWrite = null;
+        run.transcript.detachTarget();
+        target = null;
+        message("目标已变化；本轮文字保存在悬浮菜单草稿中");
+    }
+
+    private boolean targetReady() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        return !cancelled && target != null && root != null && root.getWindowId() == targetWindow
+                && target.refresh() && target.isFocused() && !target.isPassword()
+                && target.getWindowId() == targetWindow && target.isEditable();
+    }
+
+    private boolean beginWrite(DictationRun run, String addition) {
+        if (!targetReady()) return false;
+        String actual = target.isShowingHintText() || target.getText() == null ? "" : target.getText().toString();
+        int start = target.getTextSelectionStart();
+        int end = target.getTextSelectionEnd();
+        if (!actual.equals(expectedText) || !(start == cursor && end == cursor
+                || actual.isEmpty() && cursor == 0 && start < 0 && end < 0)) {
+            Log.i("VoiceLabTarget", "insert rejected expectedLength=" + expectedText.length()
+                    + " actualLength=" + actual.length() + " expectedCursor=" + cursor
+                    + " selection=" + start + ":" + end);
+            return false;
+        }
+        InputWriteAck ack = new InputWriteAck(actual, cursor, addition);
+        Bundle args = new Bundle();
+        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, ack.after);
+        if (!target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false;
+        Bundle selection = new Bundle();
+        selection.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, ack.afterCursor);
+        selection.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, ack.afterCursor);
+        target.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selection);
+        run.pendingWrite = ack;
+        run.pendingSinceMs = SystemClock.uptimeMillis();
+        return true;
     }
 
     private boolean prepareTarget() {
@@ -381,6 +495,14 @@ public final class VoiceAccessibilityService extends AccessibilityService {
                 audio.startRecording();
                 if (audio.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) throw new IllegalStateException();
             }
+            Log.i("VoiceLabSession", "microphone started rate=16000 channels=1");
+            if (run.microphoneFixture) ui.post(() -> {
+                if (activeRun != run || run.cancelled || !run.capturing) return;
+                run.playback = new FixturePlayback(this);
+                run.playback.start(new File(getFilesDir(), "fixture.wav"), () -> ui.postDelayed(() -> {
+                    if (activeRun == run && !run.cancelled) stopRecording();
+                }, 300), error -> failRun(run, error));
+            });
             byte[] frame = new byte[frameBytes];
             int filled = 0;
             while (run.capturing && !run.cancelled) {
@@ -409,6 +531,7 @@ public final class VoiceAccessibilityService extends AccessibilityService {
             if (audio != null) {
                 try { audio.stop(); } catch (IllegalStateException ignored) { }
                 audio.release();
+                Log.i("VoiceLabSession", "microphone released");
             }
             finishCapture(run);
         }
@@ -419,15 +542,17 @@ public final class VoiceAccessibilityService extends AccessibilityService {
             byte[] pcm = WavPcm16.readMono16k(fixture);
             int frameBytes = run.stream.frameBytes();
             long started = System.nanoTime();
-            for (int offset = 0; offset < pcm.length && run.capturing && !run.cancelled;) {
-                int count = Math.min(frameBytes, pcm.length - offset);
-                long due = started + (offset + count) * 1_000_000_000L / 32000;
+            long totalBytes = run.fixtureSeconds > 0 ? run.fixtureSeconds * 32000L : pcm.length;
+            for (long sent = 0; sent < totalBytes && run.capturing && !run.cancelled;) {
+                int offset = (int) (sent % pcm.length);
+                int count = (int) Math.min(Math.min(frameBytes, pcm.length - offset), totalBytes - sent);
+                long due = started + (sent + count) * 1_000_000_000L / 32000;
                 while (run.capturing && !run.cancelled && System.nanoTime() < due) {
                     LockSupport.parkNanos(Math.min(due - System.nanoTime(), 50_000_000L));
                 }
                 if (!run.capturing || run.cancelled) break;
                 if (!run.stream.offerAudio(Arrays.copyOfRange(pcm, offset, offset + count))) return;
-                offset += count;
+                sent += count;
             }
         } catch (Exception e) {
             run.cancelled = true;

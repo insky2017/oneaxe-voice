@@ -205,6 +205,12 @@ final class MobileProtocol {
         int frameBytes() { return capability.frameBytes(); }
         synchronized long sentSamples() { return sent; }
 
+        synchronized String metricsSummary(long socketQueuedBytes) {
+            return "sent=" + sent + " limit=" + sendLimit
+                    + " queued=" + ((bufferedBytes + inFlightBytes + socketQueuedBytes) / 2)
+                    + " fixed_chars=" + fixed.length();
+        }
+
         synchronized boolean awaitTerminal(long millis) throws InterruptedException {
             long deadline = System.nanoTime() + millis * 1000000L;
             while (!terminal && !cancelled) {

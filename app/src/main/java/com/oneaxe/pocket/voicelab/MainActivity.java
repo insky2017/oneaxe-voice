@@ -46,11 +46,11 @@ public final class MainActivity extends Activity {
         TextView title = label(layout, "OneAxe Voice Lab");
         title.setTextSize(23);
         label(layout, "请先自行连接 Tailscale，再访问电脑的语音服务。连接失败时会显示原因，不会自动开启 VPN。");
-        label(layout, "手机只使用电脑当前已就绪的模型。请先查询听写能力；电脑端需开启手机接口并配发专用凭据。");
+        label(layout, "手机只使用电脑当前已就绪的模型；电脑端需配发手机专用凭据。");
 
         TextView section = label(layout, "连接设置");
         section.setTextSize(19);
-        label(layout, "协议（听写须使用 HTTPS 和完整 Tailnet 主机名；HTTP 或 IP 仅用于无凭据连接诊断）");
+        label(layout, "协议（正式入口使用 HTTPS 和完整 Tailnet 主机名）");
         scheme = new Spinner(this);
         scheme.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
                 new String[]{"https", "http"}));
@@ -63,18 +63,17 @@ public final class MainActivity extends Activity {
         label(layout, "端口");
         port = field(layout, "8097", InputType.TYPE_CLASS_NUMBER);
         port.setText(Integer.toString(Settings.port(this)));
-        label(layout, "手机专用凭据（可稍后设置）");
+        label(layout, "手机专用凭据");
         token = field(layout, "不要填写电脑的模型管理令牌",
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         token.setSaveEnabled(false);
         token.setImportantForAutofill(android.view.View.IMPORTANT_FOR_AUTOFILL_NO);
-        label(layout, "同一地址留空保留已有凭据；主机或端口变更后需重新设置。没有凭据也可先检查连接。");
+        label(layout, "同一地址留空保留已有凭据；主机或端口变更后需重新设置。");
         savedAddress = label(layout, "已保存：" + Settings.url(this));
-        connectionStatus = label(layout, "尚未检查连接。默认地址不代表电脑已开放语音服务。");
+        connectionStatus = label(layout, "尚未检查听写能力。");
 
         Button save = button(layout, "保存连接设置");
-        Button check = button(layout, "检查已保存的连接");
-        Button capabilities = button(layout, "查询听写能力");
+        Button check = button(layout, "检查听写能力");
         save.setOnClickListener(v -> {
             if (VoiceAccessibilityService.isAnySessionActive()) {
                 showConnectionResult("请先结束或取消听写，再修改连接设置");
@@ -89,7 +88,7 @@ public final class MainActivity extends Activity {
                 token.setText("");
                 host.setText(Settings.host(this));
                 savedAddress.setText("已保存：" + Settings.url(this));
-                connectionStatus.setText("设置已保存，请检查连接。");
+                connectionStatus.setText("设置已保存，请检查听写能力。");
                 Toast.makeText(this, "连接设置已保存", Toast.LENGTH_SHORT).show();
             } catch (Exception e) {
                 showConnectionResult(e.getMessage() == null ? "保存失败，请检查连接设置" : e.getMessage());
@@ -98,27 +97,6 @@ public final class MainActivity extends Activity {
         check.setOnClickListener(v -> {
             if (checking) return;
             checking = true;
-            check.setEnabled(false);
-            save.setEnabled(false);
-            connectionStatus.setText("正在检查 " + Settings.url(this) + " …");
-            connectionChecks.execute(() -> {
-                String result;
-                try { result = VoiceClient.probe(this); }
-                catch (Exception e) { result = e.getMessage() == null ? "连接检查失败，请检查 Tailscale 和电脑服务" : e.getMessage(); }
-                String message = result;
-                runOnUiThread(() -> {
-                    if (isFinishing() || isDestroyed()) return;
-                    checking = false;
-                    check.setEnabled(true);
-                    save.setEnabled(true);
-                    showConnectionResult(message);
-                });
-            });
-        });
-        capabilities.setOnClickListener(v -> {
-            if (checking) return;
-            checking = true;
-            capabilities.setEnabled(false);
             check.setEnabled(false);
             save.setEnabled(false);
             connectionStatus.setText("正在查询电脑当前模型和移动听写能力 …");
@@ -130,7 +108,6 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
                     checking = false;
-                    capabilities.setEnabled(true);
                     check.setEnabled(true);
                     save.setEnabled(true);
                     showConnectionResult(message);
