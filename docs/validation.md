@@ -1,5 +1,13 @@
 # 验证记录
 
+## 2026-10-03：正式启用 R2T2 CPU 被动等待
+
+代码 `cdf00bd` 已部署到正式 `master`，仅 R2T2 子进程在启动前设置 `OMP_WAIT_POLICY=PASSIVE`。204 项 CPU 回归通过，包括新启动环境隔离检查。正式 API 重启一次；真实 worker 确认为 PASSIVE / 4 线程，GPU 为 `cuda:0`。
+
+PC 本机接口与手机身份 HTTPS/WSS 各完成 120 秒、1,920,000 个样本，无音频缺失，正常收尾。积压 p95 为 0.2659 / 0.2319 秒，后段变化为 -0.0108 / -0.0087 秒，服务 CPU 平均占用 1.111 个逻辑核。手机第 8 秒取消得到明确 cancelled final，PC 继续完成 24 秒。第三路拒绝、移动权限和模型 / worker 保持检查通过。
+
+首次测试脚本凭据文件写入错误已保留，修正后完整回归通过。结束后撤销测试凭据、清理测试会话，恢复原 Qwen 流式模式；桌面配置、托盘及 VPlus 保持。只直接核对 worker 的等待环境，EngineCore 原始环境区被进程名改写，未冒称直接读取成功。本轮不是 Android 真机、跨网或桌面粘贴重验，也没有扩容。详情与回滚方式见[部署记录](r2t2-passive-release-2026-10-03.md)，数值及来源 hash 见[JSON 证据](evidence/r2t2-passive-release-2026-10-03.json)。
+
 日期：2026-09-26，时区 Asia/Shanghai。以下运行数据在 `~/tools/oneaxe-voice` checkout 上收集，按实施阶段记录；初始分支为 `codex/initial-api`，第三阶段在 `codex/vad-streaming` 开发，交付主分支为 `master`。这些是该机器当时的测量，不代表其他安装环境已经通过验证。本记录区分自动化模拟测试、真实 GPU 验证、用户试用和 VPlus 隔离检查。
 
 ## 自动化验证
