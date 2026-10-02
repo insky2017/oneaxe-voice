@@ -160,3 +160,5 @@ flowchart LR
 - [固定 R2T2 版本](https://github.com/netease-youdao/Confucius4-R2T2/tree/26d55a54ce5670cff9947a167d8ed95d569fd4d9)、[本项目异步适配](../oneaxe_voice/r2t2_async.py)：滚动音频窗口、每步请求与稳定前缀。
 
 本轮新增的是研究文档与资源观察。多路候选代码、扩容上线及多路实测均尚未执行。
+
+后续用户已授权执行探索；隔离候选和实际验证状态见[实验记录](multi-stream-experiment-2026-10-02.md)。本文上述资源数值仍为研究阶段快照，不继承为更多路实测证据。
