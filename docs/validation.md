@@ -400,3 +400,9 @@ Android 真机跨网络录音和目标输入框填入由 Pocket 接入后单独�
 生产 `desktop.json` 与回滚备份逐字节一致。原来没有 `model-policy.json`，部署后也未创建，保持既有默认常驻策略；不把文件不存在写成哈希一致。VPlus 仍为 PID `7301`、启动时间 `2026-09-30 23:20:01 CST`，`8092/health` 返回 200。隔离 API、worker 及 GPU 子进程已回收；没有修改或重启 VPlus、修改共享权重。独立只读审查确认服务来源、配置及 Git 私有文件边界。
 
 部署证据为本机忽略文件 `work/concurrency-deploy-result.json`、`work/concurrency-live-https.json`；回滚基线在 `work/concurrency-rollback/`。证书采用固定本地镜像的受限 Docker 签发，启用 12 小时自动续期和每分钟证书重读。简短能力入口 `~/docs/oneaxe-voice/README.md` 已更新，Pocket 按 [交接说明](pocket-handoff-2026-10-02.md) 和 [移动 V1](mobile-api-v1.md) 实现；Android 真机、跨网络与输入框验收仍由客户端阶段完成。
+
+## 架构图文档验证
+
+2026-10-02，新增 [离线 HTML 架构与流程图](architecture-map.html)，依据 Voice 功能基线 `e49e30b` 核对源码。含五张关键关系图和一页实现状态，37 个可展开节点；总体、听写、并发、模型生命周期与部署依赖分别呈现。状态页另引用同日 Pocket 真机记录：独立 Voice Lab 已接入、部分真机通过，完整 V01–V07、修复版真实双麦克风长测及跨不同网络仍待验收；旧 APK 结果不继承给新版或后续源码。
+
+浏览器已验证离线 `file://` 打开、六个视图切换、全部节点详情、键盘切页与锚点直达；1440 / 1024 / 390 宽度、浅色和深色布局检查通过，页面无溢出、节点无裁切、连线标签不覆盖节点，无脚本错误或外部资源请求。33 个文档和源码链接在当前本机布局存在；客户端证据链接标明需要相邻 Pocket 工程。证据在忽略文件 `work/architecture-browser-check.json` 及对应截图。本次仅修改文档，未操作模型或听写服务，也未重跑 GPU 压测。

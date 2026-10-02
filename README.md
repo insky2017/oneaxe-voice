@@ -52,6 +52,7 @@ R2T2 使用一份 GPU 权重和独立会话状态，支持 **1 路 PC + 1 路手
 
 ## 文档
 
+- [交互式架构与流程图（离线 HTML）](docs/architecture-map.html)：总体关系、听写流程、双路并发、模型生命周期、部署依赖及实现状态；点击节点查看职责与源码。
 - [架构与隔离边界](docs/architecture.md)
 - [三模式、顶栏与实时字幕](docs/modes.md)
 - [桌面听写说明](docs/desktop.md)

@@ -1,5 +1,7 @@
 # 架构与隔离边界
 
+先看 [离线架构与流程图](architecture-map.html)，可按总体、听写、并发、生命周期和部署边界展开。
+
 第一阶段提供 GPU 短录音 API；第二阶段增加 DJI Mic、F8 和 X11 粘贴；第三阶段在独立桌面控制器中增加 CPU WebRTC VAD、持续采集及串行分段队列。第四阶段加入两种官方流式引擎、独立工作进程及顶栏控制。算法及边界见 [VAD 说明](vad.md) 和 [三模式说明](modes.md)。
 
 流式桌面端持续发送语音 PCM，约 1 秒停顿后在同一队列发送 `flush`，工作进程调用官方结束接口并重建当前句状态，保留全局文字和热模型。候选、模型固定、已发送/复制三个状态分别保存，字幕不再把候选冒充已输入。停顿后的空闲静音在桌面过滤，WS 通过保活维持整轮租约。
@@ -8,24 +10,35 @@
 flowchart LR
     T[顶栏模式菜单 / 实时字幕] <--> K
     M[DJI Mic / F8] --> K[桌面控制器 / 按模式采集]
-    K --> Q[有界片段队列]
+    K -->|稳听| Q[有界 WAV 片段队列]
     Q --> C
-    K --> S[PCM WebSocket / PC 会话]
-    P2[Pocket / Tailnet HTTPS] --> A2[移动 V1 / 独立凭据与会话]
-    A2 --> R[独立 vLLM 工作进程 / R2T2 AsyncLLM]
-    S --> R
-    R --> K
+    K -->|随听 / 旧 PCM WS| C
+    K -->|即听 / PC V1 WS| C
+    P2[Pocket / Tailnet HTTPS] --> A2
     A[WAV 文件] --> B[OneAxe Voice CLI]
-    B --> C[独立 API：127.0.0.1:8097]
-    C --> D[校验及转换为 16 kHz 单声道]
-    D --> E[独立 Qwen3-ASR 实例 / cuda:0]
+    B --> C
+    subgraph API[同一应用 / 同一模型生命周期]
+        C[本机 HTTP / WS / 127.0.0.1:8097] --> G[EngineRouter / 唯一选中引擎]
+        A2[移动 V1 / Tailnet TLS / 独立凭据] -->|只绑定已就绪 R2T2| G
+        G -->|WAV / vad| D[校验及转换为 16 kHz 单声道]
+        D --> E[API 进程内 Qwen3-ASR / cuda:0]
+    end
+    G -->|qwen-stream| QS[独立 stream_worker / Qwen 流式]
+    G -->|r2t2| R[独立 concurrent_worker / R2T2 AsyncLLM]
     E --> F[文字与耗时 JSON]
     F --> B
     F --> K
+    QS -->|固定文字 / 候选| K
+    R -->|PC 固定文字 / 候选| K
+    R -->|手机固定文字 / 候选| P2
     K --> P[检查原窗口 / 剪贴板粘贴]
     W[本地模型权重文件] -.只读加载.-> E
+    W -.只读加载.-> QS
+    W -.只读加载.-> R
     W -.只读加载.-> V[VPlus 既有模型实例 / 8092]
 ```
+
+结果沿原 HTTP / WS 连接返回。三种 Voice 引擎互斥驻留；只有 R2T2 支持 1 路 PC + 1 路手机，手机不能选择或加载引擎。
 
 ## 与 VPlus 的关系
 
