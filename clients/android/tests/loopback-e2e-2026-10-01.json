@@ -1,0 +1,27 @@
+{
+  "input": "normal fixture played through phone speaker and recaptured through AudioRecord",
+  "recording": {
+    "sample_rate": 16000,
+    "channels": 1,
+    "sample_width": 2,
+    "seconds": 8.98,
+    "rms": 567.11,
+    "peak": 4759,
+    "nonzero_samples": 142140,
+    "samples": 143680,
+    "clipped_samples": 0,
+    "source": "Phone sample-playback loopback recording; acoustic evidence only"
+  },
+  "phone_diagnostic_log": "--------- beginning of main\n10-01 23:30:14.688 12675 12675 I VoiceLabTarget: root=883 focused=true editable=true selection=-1\n10-01 23:30:14.706 12675 13797 I VoiceLabAudio: source=fixture duration_ms=8980\n10-01 23:30:14.721 12675 13797 I VoiceLabAudio: segment=1 reason=pause duration_ms=2660 voiced_frames=74\n10-01 23:30:14.735 12675 13797 I VoiceLabAudio: segment=2 reason=pause duration_ms=3120 voiced_frames=110\n10-01 23:30:14.737 12675 13797 I VoiceLabAudio: segment=3 reason=stop duration_ms=1880 voiced_frames=57\n10-01 23:30:14.737 12675 13797 I VoiceLabAudio: captured_ms=8980 mean_rms=370 max_rms=1869 frames_above_50=242 segments=3\n10-01 23:30:15.532 12675 13796 I VoiceLabHttp: transcribe_status=200 audio_ms=2660\n10-01 23:30:15.533 12675 13796 I VoiceLabHttp: request_id=25863049-1404-4031-9c1b-bfd9602fce6d result_characters=26\n10-01 23:33:40.358 12675 12675 I VoiceLabTarget: root=883 focused=true editable=true selection=-1\n10-01 23:33:40.373 12675 13914 I VoiceLabAudio: source=fixture duration_ms=8980\n10-01 23:33:40.374 12675 13914 I VoiceLabAudio: segment=1 reason=pause duration_ms=2660 voiced_frames=74\n10-01 23:33:40.376 12675 13914 I VoiceLabAudio: segment=2 reason=pause duration_ms=3120 voiced_frames=110\n10-01 23:33:40.376 12675 13914 I VoiceLabAudio: segment=3 reason=stop duration_ms=1880 voiced_frames=57\n10-01 23:33:40.377 12675 13914 I VoiceLabAudio: captured_ms=8980 mean_rms=370 max_rms=1869 frames_above_50=242 segments=3\n10-01 23:33:41.168 12675 13913 I VoiceLabHttp: transcribe_status=200 audio_ms=2660\n10-01 23:33:41.169 12675 13913 I VoiceLabHttp: request_id=9bbaf657-14eb-4f8e-bd15-7e9d4141d6dc result_characters=26\n10-01 23:33:42.036 12675 13913 I VoiceLabHttp: transcribe_status=200 audio_ms=3120\n10-01 23:33:42.037 12675 13913 I VoiceLabHttp: request_id=74ebe8e9-1823-4955-859c-3d24e172aa57 result_characters=39\n10-01 23:33:42.786 12675 13913 I VoiceLabHttp: transcribe_status=200 audio_ms=1880\n10-01 23:33:42.787 12675 13913 I VoiceLabHttp: request_id=ee4e98a0-7d6e-4a2d-bd52-f999c15a491a result_characters=21\n",
+  "apk_sha256": "d70ac0f6c8af8dd245b49d3137eb2f9d34fa118e9735d21d9337772f10dcd3fa",
+  "first_attempt": {
+    "target_text": [
+      "App 内输入框测试"
+    ],
+    "result": "Only the first HTTP response was observed; no insertion. UIAutomator dump ran during recognition. Retried without UIAutomator during processing; do not treat first attempt as passed."
+  },
+  "phone_target_text": [
+    "This is a film voice test. I want to connect to the remote server. The network is ready."
+  ],
+  "result": "Three segments returned HTTP 200 and were appended to the original input; no Enter. One ASR word differs: phone -> film. UI was inspected only after processing finished."
+}
