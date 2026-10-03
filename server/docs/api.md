@@ -8,7 +8,7 @@ V1 发送额度取实际 `ready` / `flow` 的 `audio_send_limit`；能力查询�
 
 ## 当前运行方式
 
-以下命令使用服务端目录 `~/work/touzi/OneAxe/oneaxe-voice/server`；仓库也可安装到其他目录，包括带空格的路径。独立 Linux 客户端在同一总目录下的 `clients/linux/`，见 [项目总入口](../../README.md) 与 [Linux 客户端](../../clients/linux/README.md)。服务监听地址为 `http://127.0.0.1:8097`。文中的已运行状态、性能测量及历史环境重建示例保留当时路径，仅作历史记录。
+以下命令使用服务端工程目录 `~/work/touzi/OneAxe/oneaxe-voice/server`；仓库也可安装到其他目录，包括带空格的路径。Linux 与 Android 客户端分别在 `clients/linux/`、`clients/android/`，各自独立构建；三者共享根目录 Git，Git 操作先进入根目录。入口见 [项目总入口](../../README.md)、[Linux 客户端](../../clients/linux/README.md)与 [Android 客户端](../../clients/android/README.md)。服务监听地址为 `http://127.0.0.1:8097`。文中的已运行状态、性能测量及历史环境重建示例保留当时路径，仅作历史记录；此次 Git 整合不改变 API 或运行入口。
 
 ```bash
 cd ~/work/touzi/OneAxe/oneaxe-voice/server
@@ -154,7 +154,7 @@ systemctl --user stop oneaxe-voice.service
 journalctl --user -u oneaxe-voice.service -n 50 --no-pager
 ```
 
-在仓库目录运行 `./bin/install-service`，安装器会把当前仓库的真实路径写入 `~/.config/systemd/user/oneaxe-voice.service`，再执行 `systemctl --user daemon-reload`。路径含空格时会正确转义。安装器不会启动服务；需要运行时再执行 `systemctl --user start oneaxe-voice.service`。修改模板后重新运行安装器，再按需重启本服务。停止服务即可完全释放该进程的 GPU 资源；不需要操作 VPlus。
+在 `server/` 工程目录运行 `./bin/install-service`，安装器会把该工程的真实路径写入 `~/.config/systemd/user/oneaxe-voice.service`，再执行 `systemctl --user daemon-reload`。路径含空格时会正确转义。安装器不会启动服务；需要运行时再执行 `systemctl --user start oneaxe-voice.service`。修改模板后重新运行安装器，再按需重启本服务。停止服务即可完全释放该进程的 GPU 资源；不需要操作 VPlus。
 
 前台调试使用 `./bin/serve`，先停止同端口的用户服务。保持单个 Uvicorn worker，多 worker 会加载多个模型并使进程内互斥锁失去全局限流效果。
 

@@ -2,7 +2,7 @@
 
 ## 当前目录约定
 
-总目录为 `~/work/touzi/OneAxe/oneaxe-voice`；服务端独立仓库在 `server/`，Linux 客户端独立仓库在 `clients/linux/`，容量研究 worktree 只保留 `.worktrees/server/capacity`。共享模型仍读取 `~/tools/models`。目录与文档入口见 [项目总入口](../../README.md)，客户端见 [Linux README](../../clients/linux/README.md)。本页阶段完成项与历史验证记录不构成本轮目录迁移的运行验收。
+根目录为 `~/work/touzi/OneAxe/oneaxe-voice`，统一沿用原 OneAxe Voice Git；服务端在 `server/`，Linux 与 Android 客户端在 `clients/linux/`、`clients/android/`，完整历史保留且分别构建，Git 操作在根目录执行。旧容量研究 worktree 保留 `.worktrees/server/capacity`；共享模型仍读取 `~/tools/models`。目录与文档入口见 [项目总入口](../../README.md)、[Linux README](../../clients/linux/README.md)与 [Android README](../../clients/android/README.md)，当前 Git 结构核验见[整合记录](../../docs/git-consolidation-2026-10-04.md)。下列阶段记录保留当时的仓库和验证含义，不构成本轮 Git 整合的验收。
 
 ## 第一阶段
 

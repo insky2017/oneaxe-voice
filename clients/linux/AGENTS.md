@@ -1,7 +1,8 @@
 # 开发约定
 
 - 简体中文交付。README 是入口，设计与验证证据放 docs/。
-- 本工程是独立客户端；不修改 OneAxe Voice 服务端代码或接口。必要服务端改动须先获用户确认。
+- 本工程位于统一 OneAxe Voice Git 的 `clients/linux/`，保留独立 Cargo 构建、安装和客户端职责；不创建独立 `.git`，Git 操作先进入根目录，并同时遵守根 AGENTS。
+- 修改范围以当前任务授权为准。客户端功能任务涉及服务端代码或接口变化时先确认范围；此次用户已批准的根仓库整合与推送按根 AGENTS 中的授权执行。
 - 复用移动 V1，只调用 capabilities 和 dictation/stream；没有模型管理权限。
 - 默认可配 F9，不覆盖本机 F8 或其他冲突快捷键。
 - 首版仅 Tailnet HTTPS/WSS；公网仅规划。

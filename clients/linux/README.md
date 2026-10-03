@@ -2,7 +2,7 @@
 
 连接 OneAxe Voice 服务器的轻量 Linux 客户端。录音在本机，模型推理在服务器。默认快捷键 **F9**；原有本机服务的 **F8** 保留。
 
-源码目录为 `~/work/touzi/OneAxe/oneaxe-voice/clients/linux`，与同一总目录下 `server/` 的服务端是两个独立 Git 仓库。目录约定及共享模型位置见 [项目总入口](../../README.md)，协议与模型控制边界见 [服务端 README](../../server/README.md)。历史验证记录中的旧路径保留为当时的安装位置。
+源码目录为 `~/work/touzi/OneAxe/oneaxe-voice/clients/linux`，与 `server/`、`clients/android/` 同属原 OneAxe Voice Git 仓库；完整历史保留，Git 操作只在根目录执行。本工程继续使用独立的 Cargo 构建与安装入口，不包含独立 `.git`。目录约定及共享模型位置见 [项目总入口](../../README.md)，协议与模型控制边界见 [服务端 README](../../server/README.md)，当前仓库核验见 [Git 整合记录](../../docs/git-consolidation-2026-10-04.md)。历史验证记录中的旧路径保留为当时的安装位置。
 
 - [使用与鉴权](docs/usage.md)
 - [实现边界](docs/design.md)

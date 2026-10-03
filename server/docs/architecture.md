@@ -4,7 +4,7 @@
 
 ## 目录布局
 
-总目录为 `~/work/touzi/OneAxe/oneaxe-voice`，其中 `server/` 与 `clients/linux/` 是两个独立 Git 仓库；服务端负责本机 F8、模型与 GPU，Linux 客户端提供默认可配置 F9。容量研究 worktree 只保留 `.worktrees/server/capacity`，正式服务从 `server/` 运行。共享权重仍位于 `~/tools/models`。入口见 [项目总览](../../README.md) 与 [Linux 客户端](../../clients/linux/README.md)。历史测量文档中的旧路径保留其原始含义。
+根目录为 `~/work/touzi/OneAxe/oneaxe-voice`，`server/`、`clients/linux/`、`clients/android/` 同属原 OneAxe Voice Git 仓库，完整历史保留，Git 操作在根目录进行。三个工程继续独立构建；服务端负责本机 F8、模型与 GPU，Linux 客户端提供默认可配置 F9，Android 保持独立 APK。旧容量研究 worktree 保留 `.worktrees/server/capacity`，正式服务仍从 `server/` 运行。共享权重仍位于 `~/tools/models`。入口见 [项目总览](../../README.md)、[Linux 客户端](../../clients/linux/README.md)与 [Android 客户端](../../clients/android/README.md)；Git 结构的核验见[整合记录](../../docs/git-consolidation-2026-10-04.md)。历史测量文档中的旧路径保留其原始含义。
 
 第一阶段提供 GPU 短录音 API；第二阶段增加 DJI Mic、F8 和 X11 粘贴；第三阶段在独立桌面控制器中增加 CPU WebRTC VAD、持续采集及串行分段队列。第四阶段加入两种官方流式引擎、独立工作进程及顶栏控制。算法及边界见 [VAD 说明](vad.md) 和 [三模式说明](modes.md)。
 
