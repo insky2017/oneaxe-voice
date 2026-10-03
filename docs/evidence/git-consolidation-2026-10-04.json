@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-04",
+  "workspace": "/home/sky/work/touzi/OneAxe/oneaxe-voice",
+  "origin": "git@github.com:insky2017/oneaxe-voice.git",
+  "cutover_commit": "9192c923248bc3602956c3315002978b2b414328",
+  "source_reachable_commit_counts": {
+    "server": 25,
+    "linux": 3,
+    "android": 18
+  },
+  "all_original_reachable_commits_preserved": true,
+  "original_source_heads_are_mainline_ancestors": true,
+  "original_branch_tag_object_ids_preserved": true,
+  "original_client_git_metadata_retained_privately": true,
+  "application_source_and_build_scripts_unchanged": true,
+  "one_root_git_no_superproject": true,
+  "no_nested_component_git": true,
+  "runtime_private_files_excluded": true,
+  "capacity_unmerged_commit_count": 5,
+  "retired_integration_worktree_removed": true,
+  "services_restarted": false,
+  "voice_and_vplus_pids_unchanged": true,
+  "validation": {
+    "server_unit_tests": {
+      "passed": 214,
+      "elapsed_seconds": 10.014,
+      "real_gpu_inference": false
+    },
+    "linux_tests": {
+      "library_passed": 59,
+      "client_passed": 10,
+      "offline": true,
+      "installed_binary_changed": false
+    },
+    "android_final_directory": {
+      "tests_passed": 32,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "debug_build": "passed",
+      "tasks_executed": 38,
+      "elapsed_seconds": 25,
+      "application_id": "com.oneaxe.pocket.voicelab",
+      "application_id_matches_original": true,
+      "signing_certificate_matches_original": true,
+      "apk_sha256": "6a5390746921a454e0f5bf96ff1b609e5ff46dbd6c83b327068a9f5c806b38e3",
+      "apk_installed": false
+    },
+    "local_and_e15l_authenticated_capabilities": {
+      "passed": true,
+      "mode": "qwen-stream",
+      "ready": true,
+      "can_start": true
+    },
+    "gpu_asr_audio_replay_included": false,
+    "desktop_or_android_device_input_retested": false
+  },
+  "initial_atomic_push": {
+    "passed": true,
+    "force": false,
+    "verified_remote_refs": {
+      "refs/heads/master": "9192c923248bc3602956c3315002978b2b414328",
+      "refs/heads/archive/server/master": "4a67e4d71d2493358148aee80dfa8e1697c06ee7",
+      "refs/heads/archive/linux/main": "64dcb6bcc9caa59b13df2fcbc099db142cd1972e",
+      "refs/heads/archive/android/codex/standalone-voice-android": "a78f4aba18afeca0be6bb8aac31ebed9e27993cd",
+      "refs/tags/archive/android/import/pocket-3f60ab3": "b66620dcadc2b8029db6e82ca2432cf98a88f7c9"
+    }
+  },
+  "limits": [
+    "Historical research branches keep their original layout and have not been redeployed",
+    "No Android device installation or new GUI/microphone acceptance",
+    "Runtime recognition evidence remains in the preceding directory migration record"
+  ]
+}

@@ -33,9 +33,9 @@ oneaxe-voice/                     # 原服务端 Git 延续至此
 6. 保存旧仓库元数据与恢复入口，把原服务端 Git 延续到产品根目录，保留已有 `server/` 运行对象并收回客户端独立 `.git`；修复旧容量研究的 Git 元数据而不改变其研究内容。
 7. 在根目录提交整合文档并快进原主分支，按已批准范围推送到原远端；核对远端提交和本地根目录一致，再补写最终验收结果。
 
-## 临时整合基线
+## 整合提交与历史保留
 
-本节为临时仓库中的已准备结构，不代表正式根目录切换或远端推送已完成：
+以下结构已用于正式根目录切换，并通过普通快进推送到原 GitHub 仓库：
 
 | 结构提交 | 保留关系 |
 | --- | --- |
@@ -43,21 +43,25 @@ oneaxe-voice/                     # 原服务端 Git 延续至此
 | `d225b7e` | 第一父为 `e73fb35`，第二父为 Linux 来源 `64dcb6b`，导入 `clients/linux/` |
 | `21f1cec` | 第一父为 `d225b7e`，第二父为 Android 来源 `a78f4ab`，导入 `clients/android/` |
 
-历史导入核对覆盖各来源所有原有分支和标签的可达提交。三个用于整合的来源 tip 均保留为主线祖先；服务端未合入的容量研究继续由原研究分支保留，不混入正式主线。Linux 归档 ref 为 `archive/linux/main`；Android 保留 `archive/android/codex/standalone-voice-android` 和原注解标签 `archive/android/import/pocket-3f60ab3`。Linux 原 `.git` 中不可达的试验提交随私有整库备份保留，不额外推送；最终来源计数与核验结果在下方验收记录补充。
+历史导入核对覆盖各来源所有原有分支和标签的可达提交。三个用于整合的来源 tip 均保留为主线祖先；服务端未合入的容量研究继续由原研究分支保留，不混入正式主线。服务端原主线保存为 `archive/server/master`，其余服务端分支保持原名；Linux 归档 ref 为 `archive/linux/main`；Android 保留 `archive/android/codex/standalone-voice-android` 和原注解标签 `archive/android/import/pocket-3f60ab3`。Linux 原 `.git` 中不可达的试验提交随私有整库备份保留，不额外推送；最终核对共保留 46 个来源提交与 14 个原分支/标签对象（按约定映射）。
 
 旧容量研究仍保留未合入服务端主线的研究提交和工作区；不因 Git 整合将其宣布已合并、正式部署或完成扩容。恢复操作须依据本地备份与最终切换记录进行，不能只复制源码推断 Git 元数据和运行路径已恢复。
 
-## 待验收
+## 验收结果
 
 - [x] 原来源 refs 可达提交全部仍在统一库可达：服务端 25、Linux 3、Android 18。服务端 `4a67e4d`、Linux `64dcb6b`、Android `a78f4ab` 均为整合主线祖先；所有原分支/标签对象 ID 保留，客户端 refs 使用组件归档前缀。
-- [ ] 证明最终根目录属于原 Voice Git，三个工程目录没有独立 `.git`，也不属于上级 OneAxe Git；记录远端与分支。
+- [x] 根目录及三个工程中的 `git rev-parse --show-toplevel` 均返回 `~/work/touzi/OneAxe/oneaxe-voice`，无 superproject；原 Voice `.git` 已提升至根目录，客户端不再有嵌套 `.git`，主分支为 `master`，远端保持原地址。
 - [x] 三个初始导入子树的 tree OID 与来源 HEAD 一致；之后仅修改 README、AGENTS 与文档，没有修改功能代码、API 或构建脚本。
-- [ ] 核对 `.gitignore` 与跟踪清单，不引入 runtime、令牌、录音、依赖环境、产物或私有备份。
-- [ ] 核对服务端环境、systemd 和 F8/F9 路径保持当前部署，已安装 Linux binary 与 Android APK 未被替换；此次不进行服务重启或真听写测试。
-- [ ] 证明 `.worktrees/server/capacity` 的分支、独有研究历史和工作区仍可用。
+- [x] 287 个原跟踪文件均在对应子目录保留；私有备份、运行数据、环境及构建产物均被忽略、未被跟踪。客户端源可达历史检查未发现明显凭据、私钥、录音或构建产物。`git fsck` 无对象完整性错误。
+- [x] 正式服务运行路径继续为 `server/`，Voice 三个进程及 VPlus PID 前后一致。未重启或改配服务、未替换客户端安装版。正式本机 API 健康检查、本机及 e15l 已安装客户端 HTTPS 鉴权/能力查询均通过，Qwen 流式已就绪。此次没有重放 GPU 音频或操作桌面输入。
+- [x] 容量研究 worktree 的 Git 元数据已修复，仍在 `029959f`，5 个独有研究提交未合入主线；环境链接有效、工作树干净。临时整合 worktree 和已合并的临时分支已收回。
 - [x] 文档相对链接与独立构建入口核对通过；临时统一树内服务端 214 项测试、Linux 59 项库测试 + 10 项客户端测试、Android 32 项测试均通过。Android 离线 Debug APK 构建成功，applicationId 与原 APK 签名证书一致，未安装到手机。
-- [ ] 记录最终本地提交、远端推送结果和恢复入口。
+- [x] 结构切换提交 `9192c92` 及服务端原主线、Linux/Android 归档分支和 Android 原注解标签已原子推送成功，并逐项核对远端 OID；没有强推。最终验收文档随主线正常追加提交。
 
 ## 最终结果
 
-待主任务完成正式切换和核验后补充。本轮文档准备阶段未运行服务测试、GPU 识别或客户端输入验收；源码整理、历史导入、正式目录切换、推送和运行证据分别记录。
+正式根目录与 GitHub 仓库已统一，Android 已迁入 `clients/android/`。Android 在最终位置再次离线执行 32 项测试与 Debug APK 构建，38 个任务重新执行；产物与准备目录 SHA-256 相同，包名与原 APK 签名证书一致。构建验证不等于手机真机验收，本次未安装新 APK。详见 [Android 复验](../clients/android/docs/migration/unified-2026-10-04.md) 和 [机器可读检查结果](evidence/git-consolidation-2026-10-04.json)。
+
+私有恢复资料在 `.archive/git-unification-2026-10-04/`：三个来源 Git bundle、原 refs/提交/文件清单，以及 Linux、Android 原 `.git` 整库。原客户端 reflog 和不可达试验对象随整库保留，不额外发布。原服务 Git 的其余分支和对象仍在当前根 `.git` 中。
+
+旧归档分支保留原目录布局，查阅或运行旧版本应使用独立 worktree；不要在正式服务目录直接切换到旧布局分支。恢复独立仓库时需要结合备份恢复各自 Git 元数据和父目录忽略规则，不需为了恢复 Git 更换设备凭据或模型权重。
