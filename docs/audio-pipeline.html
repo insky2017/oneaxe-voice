@@ -17,7 +17,7 @@
 <main>
 <header>
   <div><div class="eyebrow">ONEAXE VOICE / AUDIO PIPELINE</div><h1>一句话，怎样变成文字</h1><p class="intro">沿音频流看模块、等待与计算，再看文字如何到达输入框。</p></div>
-  <div class="snapshot">2026-10-03 · 源码 825fa5c<br>已预热的桌面流式路径<a href="architecture-map.html">完整架构图 ↗</a></div>
+  <div class="snapshot">2026-10-03 · Qwen V1 / 双路更新<br>新增能力验证中；保留旧计时证据<a href="architecture-map.html">完整架构图 ↗</a></div>
 </header>
 <div class="controls">
   <div class="switch" role="group" aria-label="选择要查看的流式模式">
@@ -26,7 +26,8 @@
   </div>
   <div class="legend" aria-label="数字类型"><span class="policy">配置 / 音频时长</span><span class="measured">已有实测</span><span class="unknown">未单独计时</span></div>
 </div>
-<p class="mode-note" id="mode-note" aria-live="polite">已实现 · 单路 · 每累计 2 秒音频识别一次；尾部文字确认后才自动输入。</p>
+<p class="mode-note" id="mode-note" aria-live="polite">本轮更新 / 验证中 · 1 PC + 1 远端共享 Qwen AsyncLLM，各会话独立；F8 保留旧 WS，远端统一移动 V1。</p>
+<p class="boundary">两种流式均经 concurrent_worker，共享所选模型的一份权重和 AsyncLLM。远端按 capabilities 加入已就绪模型，不按模型切换接口、不传 mode；本机 V1 接受两种模式且必须传 mode。V1 从 capabilities、实际 ready / flow 读取额度：R2T2 默认 32000 样本，Qwen 默认 34560，按配置与最大帧动态计算；vad 不支持远端。</p>
 <noscript>当前展示 Qwen 流式。启用 JavaScript 后可切换 R2T2；下方证据链接始终可用。</noscript>
 
 <section class="phase" aria-labelledby="input-title">
@@ -34,7 +35,7 @@
   <div class="flow">
     <article class="node"><div class="node-top"><span class="step">A · 采集</span><span class="place">桌面 / 音频系统</span></div><h3>DJI Mic → parec</h3><p>F8 开始录音；音频系统持续提供原始 PCM 数据。</p><span class="timing">50 ms 缓冲目标</span><p>这是采集配置，实际设备延迟未测。</p></article>
     <article class="node"><div class="node-top"><span class="step">B · 门控</span><span class="place">CPU / VAD</span></div><h3>判断语音，组成音频包</h3><p>过滤空闲静音；说话期间持续发送，停顿时触发收尾。</p><span class="timing">20 ms 帧 → 160 ms 包</span><p>240 ms 前置缓存保护开头；VAD 计算未单测。</p></article>
-    <article class="node"><div class="node-top"><span class="step">C · 传输</span><span class="place">桌面 → 服务</span></div><h3>WebSocket → API → worker</h3><p id="transport">Qwen 逐包发送并等待回复；采集任务仍继续录音。</p><span class="timing unknown">网络 / 排队 / IPC 未拆分</span></article>
+    <article class="node"><div class="node-top"><span class="step">C · 传输</span><span class="place">桌面 → 服务</span></div><h3>WebSocket → API → worker</h3><p id="transport">Qwen F8 逐包发送并等待回复；采集任务仍继续录音。远端按 capabilities 使用统一 V1，本机 V1 也接受 Qwen。</p><span class="timing unknown">网络 / 排队 / IPC 未拆分</span></article>
     <article class="node"><div class="node-top"><span class="step">D · 累积</span><span class="place">worker / CPU</span></div><h3>凑够一次识别的音频</h3><p id="window">累积音频与历史文字；Qwen 到 30 秒完成窗口收尾并重建状态。</p><span class="timing" id="chunk">每 2 秒音频一次</span><p>这是音频门槛；缓冲处理未单测。</p></article>
   </div>
   <div class="bridge">凑够音频后进入识别；录音继续，后续音频进入缓冲。</div>
@@ -46,9 +47,9 @@
     <div class="flow">
       <article class="node"><div class="node-top"><span class="step">E · 特征</span><span class="place">CPU / PyTorch</span></div><h3>音频 → 频谱特征</h3><p>STFT / Mel 特征提取。将波形变成模型能读取的数值。</p><span class="timing unknown">特征计算未单独计时</span></article>
       <article class="node gpu"><div class="node-top"><span class="step">F · 推理</span><span class="place">RTX 4090 / vLLM</span></div><h3>编码音频，生成文字</h3><p>音频编码器理解声音；文字解码器结合上下文生成结果。</p><span class="timing unknown">纯 GPU 时间未单独计时</span></article>
-      <article class="node"><div class="node-top"><span class="step">G · 确认</span><span class="place">worker / CPU</span></div><h3>区分固定文字与候选</h3><p id="stability">首块不固定；后续保留末尾 13 个 token，避免提前输入仍会变化的文字。</p><span class="timing" id="stable-timing">固定时间取决于内容</span><p>文字处理未单独计时。</p></article>
+      <article class="node"><div class="node-top"><span class="step">G · 确认</span><span class="place">worker / CPU</span></div><h3>区分固定文字与候选</h3><p id="stability">前 2 块允许整体修订；固定时保留末尾 13 个 token，避免提前输入仍会变化的文字。</p><span class="timing" id="stable-timing">固定时间取决于内容</span><p>文字处理未单独计时。</p></article>
     </div>
-    <div class="total"><strong id="worker-total">worker 识别步骤 p95 ≈ 228 ms</strong><span id="worker-scope">Qwen：仅统计触发 2 秒识别的步骤。含特征、推理及文字处理，也含解码 / 缓冲开销。</span></div>
+    <div class="total"><strong id="worker-total">旧单路 worker 识别步骤 p95 ≈ 228 ms</strong><span id="worker-scope">旧 Qwen 单路证据：仅统计触发 2 秒识别的步骤。含特征、推理及文字处理，也含解码 / 缓冲开销；不代表本轮双路。</span></div>
   </div>
 </section>
 
@@ -63,8 +64,8 @@
 </section>
 
 <div class="milestones">
-  <section class="milestone" aria-labelledby="first-title"><h2 id="first-title">实测里程碑 · 首次收到固定文字</h2><p><strong id="first-fixed">8.13 秒</strong><span id="first-label">Qwen · 单路中文测试</span></p><p>从服务就绪后开始模拟实时采集，到客户端收到首个固定文字。包含前面的等待与处理，不代表每次听写都要这么久，也不等于实际粘贴时刻。</p></section>
-  <section class="milestone" aria-labelledby="finish-title"><h2 id="finish-title">停顿 / F8 停止 · 补齐最后几个字</h2><div class="finish-flow"><span class="wait">静音约 1 秒 → flush</span><span>或 F8 → finish</span><span>→ 尾部识别 → 交付</span></div><p><span class="result" id="finish-result">finish 发出 → 最终回复：实测 96 ms</span></p><p>1 秒是流式默认停顿门槛，期间仍处理音频。这里的收尾实测不含静音等待、发送前排队和界面交付；flush 与 finish 的耗时也不必相同。</p></section>
+  <section class="milestone" aria-labelledby="first-title"><h2 id="first-title">历史实测 · 首次收到固定文字</h2><p><strong id="first-fixed">8.13 秒</strong><span id="first-label">Qwen · 旧单路中文测试</span></p><p>从服务就绪后开始模拟实时采集，到客户端收到首个固定文字。包含前面的等待与处理，不代表每次听写都要这么久，也不等于实际粘贴时刻。</p></section>
+  <section class="milestone" aria-labelledby="finish-title"><h2 id="finish-title">停顿 / F8 停止 · 补齐最后几个字</h2><div class="finish-flow"><span class="wait">静音约 1 秒 → flush</span><span>或 F8 → finish</span><span>→ 尾部识别 → 交付</span></div><p><span class="result" id="finish-result">finish 发出 → 最终回复：旧单路实测 96 ms</span></p><p>1 秒是流式默认停顿门槛，期间仍处理音频。这里的收尾实测不含静音等待、发送前排队和界面交付；flush 与 finish 的耗时也不必相同。</p></section>
 </div>
 <p class="boundary"><b>这些数字不能直接相加。</b>20 / 160 / 2000 ms 是嵌套的音频长度；采集、传输与识别可重叠。p95 表示 95% 的被测步骤不超过该值。橙色是配置，蓝色是历史实测，灰色环节尚未拆开测量。</p>
 
@@ -72,39 +73,41 @@
   <summary>查看计时边界、源码与证据</summary>
   <div class="evidence">
     <div><h3>读图边界</h3><ul>
-      <li>本图是正式代码的桌面流式路径。已预热，不含模型冷启动；本次只整理已有证据。</li>
-      <li>Qwen：2026-10-03 正式回归，单路 120 秒；worker 步骤 p95 227.7805 ms，首固定 8.125195 秒，finish 0.0962 秒。</li>
-      <li>R2T2：同日两路各 120 秒正式回归，展示 PC 中文一路；worker 回复步骤 p95 125.975 ms，首固定 4.0658 秒，finish 0.2192 秒。</li>
+      <li>本图按本轮源码更新流程，Qwen V1 / 双路能力验证中；以下数值全部保留旧版证据。已预热，不含模型冷启动，不能作为新 Qwen 双路的延迟结论。</li>
+      <li>旧 Qwen 单路：2026-10-03 原 stream_worker 正式回归，单路 120 秒；worker 步骤 p95 227.7805 ms，首固定 8.125195 秒，finish 0.0962 秒。</li>
+      <li>旧 R2T2 双路：同日两路各 120 秒正式回归，展示 PC 中文一路；worker 回复步骤 p95 125.975 ms，首固定 4.0658 秒，finish 0.2192 秒。</li>
       <li>两份测试的并发量、输入节奏与统计范围不同，不据此计算两种模式的速度倍率。Qwen 取触发识别的音频步骤；R2T2 取报告中的各回复步骤，包含收尾。</li>
       <li>首固定与收尾由协议测试客户端测量；本轮没有测真实麦克风、字幕绘制或输入框粘贴的完整延迟。</li>
     </ul></div>
     <div><h3>源码对应关系</h3><ul>
       <li>A：capture.py；B：vad.py；C：desktop.py、server.py、worker_client.py。</li>
-      <li>D–G：stream_worker.py（Qwen）；concurrent_worker.py、r2t2_async.py（R2T2）；特征与推理使用已安装的官方依赖。</li>
+      <li>D–G：两者均经 concurrent_worker.py；Qwen 使用 qwen_async.py，R2T2 使用 r2t2_async.py；特征与推理使用已安装的官方依赖。旧 Qwen 数值来自原 stream_worker.py。</li>
+      <li>Qwen 默认 512 MiB KV，R2T2 默认 1 GiB；两者 max_num_seqs=2、decode graph capture sizes 为 [1, 2]，继续使用 4 CPU 线程和子进程 OMP_WAIT_POLICY=PASSIVE，模型由 GPU 推理。</li>
+      <li>V1 的 audio_processed_samples 只累计真实已处理 PCM，数字静音计数；未推理缓冲与 80 ms 补零不计，flush 不清零。Qwen 默认窗口 34560 样本来自 max(configured_window, 32000 + max_frame_bytes / 2)。</li>
       <li>交付：desktop.py、tray.py、paste.py。250 ms 字幕轮询与 Qwen 发布门槛分别运行，不能当作固定增加 500 ms。</li>
       <li>Qwen 保留的 13 token = 官方回滚 5 + 本项目保护 8；token 不等于汉字。无提前 flush 时，累计 4 秒后才首次有机会固定。</li>
       <li>240 ms 前置保留是缓存历史音频；不额外等待 240 ms。流式停顿默认 1000 ms；700 ms 属于分段模式。</li>
     </ul></div>
   </div>
-  <div class="source-links"><a href="qwen-passive-release-2026-10-03.md">Qwen 发布与验证</a><a href="evidence/qwen-passive-release-2026-10-03.json">Qwen 数值证据</a><a href="r2t2-passive-release-2026-10-03.md">R2T2 发布与验证</a><a href="evidence/r2t2-passive-release-2026-10-03.json">R2T2 数值证据</a><a href="../oneaxe_voice/stream_worker.py">Qwen worker 源码</a><a href="../oneaxe_voice/r2t2_async.py">R2T2 worker 源码</a><a href="../oneaxe_voice/desktop.py">桌面流程源码</a></div>
+  <div class="source-links"><a href="qwen-passive-release-2026-10-03.md">旧 Qwen 单路发布与验证</a><a href="evidence/qwen-passive-release-2026-10-03.json">旧 Qwen 单路数值证据</a><a href="r2t2-passive-release-2026-10-03.md">R2T2 发布与验证</a><a href="evidence/r2t2-passive-release-2026-10-03.json">R2T2 数值证据</a><a href="../oneaxe_voice/qwen_async.py">Qwen 异步适配源码</a><a href="../oneaxe_voice/concurrent_worker.py">共享 worker 源码</a><a href="../oneaxe_voice/r2t2_async.py">R2T2 worker 源码</a><a href="../oneaxe_voice/desktop.py">桌面流程源码</a></div>
 </details>
-<footer><span>图中流程均已实现；独立阶段计时尚待补充。配置展示源码默认值，用户设置可能覆盖。</span><span>离线可用 · 非实时监控</span></footer>
+<footer><span>Qwen V1 / 双路为本轮更新，验证中；计时保留旧版证据。配置展示源码默认值，用户设置可能覆盖。</span><span>离线可用 · 非实时监控</span></footer>
 </main>
 <script>
 'use strict';
 const modes = {
   qwen: {
-    note:'已实现 · 单路 · 每累计 2 秒音频识别一次；尾部文字确认后才自动输入。',
-    transport:'Qwen 逐包发送并等待回复；采集任务仍继续录音。',
+    note:'本轮更新 / 验证中 · 1 PC + 1 远端共享 Qwen AsyncLLM，各会话独立；F8 保留旧 WS，远端统一移动 V1。',
+    transport:'Qwen F8 逐包发送并等待回复；采集任务仍继续录音。远端按 capabilities 使用统一 V1，本机 V1 也接受 Qwen。',
     window:'累积音频与历史文字；Qwen 到 30 秒完成窗口收尾并重建状态。',
     chunk:'每 2 秒音频一次',
-    stability:'首块不固定；后续保留末尾 13 个 token，避免提前输入仍会变化的文字。',
+    stability:'前 2 块允许整体修订；固定时保留末尾 13 个 token，避免提前输入仍会变化的文字。',
     stableTiming:'固定时间取决于内容',
-    workerTotal:'worker 识别步骤 p95 ≈ 228 ms',
-    workerScope:'Qwen：仅统计触发 2 秒识别的步骤。含特征、推理及文字处理，也含解码 / 缓冲开销。',
+    workerTotal:'旧单路 worker 识别步骤 p95 ≈ 228 ms',
+    workerScope:'旧 Qwen 单路证据：仅统计触发 2 秒识别的步骤。含特征、推理及文字处理，也含解码 / 缓冲开销；不代表本轮双路。',
     delivery:'Qwen 普通文字发布设 250 ms 间隔门槛；停顿 / 结束立即进入交付。',
-    firstFixed:'8.13 秒',firstLabel:'Qwen · 单路中文测试',
-    finishResult:'finish 发出 → 最终回复：实测 96 ms'
+    firstFixed:'8.13 秒',firstLabel:'Qwen · 旧单路中文测试',
+    finishResult:'finish 发出 → 最终回复：旧单路实测 96 ms'
   },
   r2t2: {
     note:'已实现 · 1 路 PC + 1 路手机 · 各会话独立；共享一份模型，异步推进。下图展示 PC 路径。',
@@ -113,11 +116,11 @@ const modes = {
     chunk:'首次 320 ms；随后每 160 ms',
     stability:'按模型的回滚规则固定前文；通常保留末尾 1 个 token，遇标点时规则可不同。',
     stableTiming:'每步都可更新；不保证每步出字',
-    workerTotal:'worker 回复步骤 p95 ≈ 126 ms',
-    workerScope:'R2T2：两路测试中的 PC 路；报告包含收尾步骤。含特征、调度、推理及文字处理；不含会话锁前等待。',
+    workerTotal:'旧双路 worker 回复步骤 p95 ≈ 126 ms',
+    workerScope:'旧 R2T2 双路证据中的 PC 路；报告包含收尾步骤。含特征、调度、推理及文字处理；不含会话锁前等待。',
     delivery:'R2T2 固定文字进入独立交付任务；没有 Qwen 的 250 ms 发布门槛。',
-    firstFixed:'4.07 秒',firstLabel:'R2T2 · 双路测试中的 PC 中文',
-    finishResult:'finish 发出 → 最终回复：PC 路实测 219 ms'
+    firstFixed:'4.07 秒',firstLabel:'R2T2 · 旧双路测试中的 PC 中文',
+    finishResult:'finish 发出 → 最终回复：旧双路 PC 实测 219 ms'
   }
 };
 const fields = {'mode-note':'note',transport:'transport',window:'window',chunk:'chunk',stability:'stability','stable-timing':'stableTiming','worker-total':'workerTotal','worker-scope':'workerScope',delivery:'delivery','first-fixed':'firstFixed','first-label':'firstLabel','finish-result':'finishResult'};

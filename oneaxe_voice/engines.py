@@ -17,7 +17,7 @@ import uuid
 
 from .backend import BusyError, GPUError, QwenEngine
 from .config import ROOT
-from .modes import validate_mode
+from .modes import STREAM_MODES, validate_mode
 from .worker_client import WorkerClient, WorkerRPCError
 
 
@@ -49,7 +49,6 @@ class Worker:
     def __init__(self, settings, mode):
         self.process = None
         self.socket = None
-        self.stream = None
         self.client = None
         interpreter = Path(os.environ.get("ONEAXE_VOICE_STREAM_PYTHON", ROOT / ".venv-stream/bin/python")).expanduser()
         if not interpreter.is_file():
@@ -61,9 +60,6 @@ class Worker:
             raise GPUError("所选模式的本地模型不存在")
         parent, child = socket.socketpair()
         self.socket = parent
-        if mode != "r2t2":
-            parent.settimeout(240)
-            self.stream = parent.makefile("rb")
         env = dict(os.environ, ONEAXE_WORKER_FD=str(child.fileno()),
                    CUDA_VISIBLE_DEVICES=str(settings.cuda_device),
                    HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", OMP_NUM_THREADS="4",
@@ -75,39 +71,22 @@ class Worker:
             fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "wb") as output:
                 self.process = subprocess.Popen(
-                    [str(interpreter), "-m", "oneaxe_voice.concurrent_worker" if mode == "r2t2"
-                     else "oneaxe_voice.stream_worker", mode, str(model)],
+                    [str(interpreter), "-m", "oneaxe_voice.concurrent_worker", mode, str(model)],
                     cwd=ROOT, env=env, pass_fds=(child.fileno(),),
                     stdout=output, stderr=output, start_new_session=True,
                 )
-            if mode == "r2t2":
-                self.client = WorkerClient(parent)
-                self.client.wait_ready()
-            else:
-                self._receive()
+            self.client = WorkerClient(parent)
+            self.client.wait_ready()
         except Exception:
             self.close()
             raise
         finally:
             child.close()
 
-    def _receive(self):
-        line = self.stream.readline(2 * 1024 * 1024)
-        if not line or not line.endswith(b"\n"):
-            raise GPUError("流式工作进程意外退出，请查看本机诊断日志")
-        result = json.loads(line)
-        if "error" in result:
-            raise GPUError("流式推理失败（" + result["error"] + "），已停止本轮")
-        return result
-
     def call(self, op, **values):
-        if self.client is not None:
-            return self.client.call(op, **values)
-        try:
-            self.socket.sendall((json.dumps({"op": op, **values}) + "\n").encode())
-            return self._receive()
-        except (OSError, ValueError) as exc:
-            raise GPUError("流式工作进程通信失败") from exc
+        if self.client is None:
+            raise GPUError("流式工作进程已关闭")
+        return self.client.call(op, **values)
 
     def is_ready(self):
         return (self.process is not None and self.process.poll() is None and
@@ -126,8 +105,6 @@ class Worker:
             with suppress(ProcessLookupError):
                 os.killpg(self.process.pid, signal.SIGKILL)
             self.process.wait(timeout=5)
-        if self.stream:
-            self.stream.close()
         if self.socket:
             self.socket.close()
 
@@ -314,8 +291,8 @@ class EngineRouter:
             loaded = self.worker is not None if self.mode != "vad" else self.offline.status().get("model_loaded")
             if self.loading or self.unloading or not loaded:
                 raise SessionError("MODEL_NOT_READY", "请等待 PC 加载模型")
-            if self.mode != "r2t2":
-                raise SessionError("MODEL_UNSUPPORTED", "当前模型不支持手机听写")
+            if self.mode not in STREAM_MODES:
+                raise SessionError("MODEL_UNSUPPORTED", "当前模式尚未接入远端流式接口")
             if any(item.kind == "mobile" for item in self._sessions.values()):
                 raise SessionError("CAPACITY_EXCEEDED", "手机听写名额已占用", True)
             if session in self._sessions or session in self._terminal_sessions:
@@ -388,9 +365,7 @@ class EngineRouter:
             return item
 
     def _call_worker(self, item, op, **values):
-        if item.mode == "r2t2":
-            return item.worker.call(op, session=item.session_id, **values)
-        return item.worker.call(op, **values)
+        return item.worker.call(op, session=item.session_id, **values)
 
     def _public_error(self, exc):
         code = getattr(exc, "code", "SERVICE_UNAVAILABLE")
@@ -465,12 +440,8 @@ class EngineRouter:
                 return
             self._mark_terminal(item, "finished")
         try:
-            if item.mode == "r2t2":
-                with suppress(GPUError):
-                    self._call_worker(item, "end")
-            else:
-                with item.operation_lock:
-                    pass
+            with suppress(GPUError):
+                self._call_worker(item, "end")
         finally:
             with self._lifecycle_lock:
                 self._retire(item, "finished")
@@ -482,15 +453,8 @@ class EngineRouter:
                 return
             self._mark_terminal(item, reason)
         try:
-            if item.mode == "r2t2":
-                with suppress(GPUError):
-                    self._call_worker(item, "cancel")
-            else:
-                # Legacy Qwen has no per-request abort. Reset only after its
-                # current RPC completes, preserving the resident model.
-                with item.operation_lock:
-                    with suppress(GPUError):
-                        self._call_worker(item, "start")
+            with suppress(GPUError):
+                self._call_worker(item, "cancel")
         finally:
             with self._lifecycle_lock:
                 self._retire(item, reason)

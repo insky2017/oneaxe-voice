@@ -68,27 +68,31 @@ R2T2 默认只读加载 `~/tools/models/Confucius4-R2T2`；可用 `ONEAXE_VOICE_
 
 ## 官方实现与适配
 
-[Qwen 官方仓库](https://github.com/QwenLM/Qwen3-ASR)对应的 `qwen-asr==0.0.6` 使用 的官方 `init_streaming_state`、`streaming_transcribe`、`finish_streaming_transcribe`，并配合其指定的 `vllm==0.14.0`。参数为 2 秒音频块、前 2 块允许整体修订、之后回退 5 个 token。OneAxe 另外保留 8 个尾部 token，避免 token 边界重分词影响已经输入的文字；这会增加稳定文字的输出延迟，候选字幕仍及时更新。
+[Qwen 官方仓库](https://github.com/QwenLM/Qwen3-ASR)对应的 `qwen-asr==0.0.6` 保留官方 `init_streaming_state` 及 `streaming_transcribe`、`finish_streaming_transcribe` 算法，并配合其指定的 `vllm==0.14.0`。`qwen_async.py` 将普通步与尾部步分为准备、异步推理和应用结果，交给共享 AsyncLLM；每个会话独立保存官方 streaming state。参数为 2 秒音频块、前 2 块允许整体修订、之后回退 5 个 token，普通步和尾部步均最多生成 256 token。OneAxe 另外保留 8 个尾部 token，避免 token 边界重分词影响已经输入的文字；这会增加稳定文字的输出延迟，候选字幕仍及时更新。
 
-Qwen 官方接口会累积整段音频，且不提供音频与文字的时间对齐。本项目连续语音每 30 秒调用官方结束接口，再创建新的流式状态；已经输出的文字保留，采集不停。这个资源上限与停顿收尾并存。窗口边界可能影响个别字词及标点，长篇连续听写优先选择有原生滚动窗口的即听。不通过文本相似度删除重复表达。任何已提交前缀不一致会停止本轮，保留已完成结果。
+Qwen 官方接口会累积整段音频，且不提供音频与文字的时间对齐。本项目连续语音每 30 秒按官方尾部算法异步推理，再创建新的流式状态；已经输出的文字保留，采集不停。这个资源上限与停顿收尾并存。窗口边界可能影响个别字词及标点，长篇连续听写优先选择有原生滚动窗口的即听。不通过文本相似度删除重复表达。任何已提交前缀不一致会停止本轮，保留已完成结果。
 
-R2T2 代码固定在 [26d55a54](https://github.com/netease-youdao/Confucius4-R2T2/tree/26d55a54ce5670cff9947a167d8ed95d569fd4d9)，来源及许可证见 [vendor](../vendor/README.md)。使用官方 `streaming_transcribe_no_reset`：首次 320 ms（含前瞻），以后 160 ms，16 秒滚动窗口、每次移走 8 秒；设置官方 `rollback_punctuation=True`，候选末尾已有标点时不再扣留该 token。读取稳定前缀，按差量输入；候选后缀由当前滚动窗口的 `chunk_text` 对齐，不把窗口局部文字误当作全局前缀。
+R2T2 代码固定在 [26d55a54](https://github.com/netease-youdao/Confucius4-R2T2/tree/26d55a54ce5670cff9947a167d8ed95d569fd4d9)，来源及许可证见 [vendor](../vendor/README.md)。`r2t2_async.py` 保留官方 `streaming_transcribe_no_reset` 算法：首次 320 ms（含前瞻），以后 160 ms，16 秒滚动窗口、每次移走 8 秒；设置官方 `rollback_punctuation=True`，候选末尾已有标点时不再扣留该 token。读取稳定前缀，按差量输入；候选后缀由当前滚动窗口的 `chunk_text` 对齐，不把窗口局部文字误当作全局前缀。
 
-两个官方结束接口在恰好整块结束、缓冲为空时会跳过最后推理。本项目在停顿或 F8 结束时附加 80 ms 静音上下文，调用官方 final flush，补齐保留的 token。停顿后创建新的句子状态、保留整轮已提交文字，避免重复 final 破坏 R2T2 的音频块与滚动文本映射。
+两个官方结束接口在恰好整块结束、缓冲为空时会跳过最后推理。本项目在停顿或 F8 结束时附加 80 ms 静音上下文，按官方 final flush 算法推理，补齐保留的 token。停顿后创建新的句子状态、保留整轮已提交文字，避免重复 final 破坏 R2T2 的音频块与滚动文本映射。
 
 端点处理参考官方 R2T2 README 中 VAD 配合 WebSocket 收尾的方式，桌面复用已有 CPU WebRTC VAD，以 20 ms 帧、-60 dBFS 门限检测说话和约 1 秒停顿。开口前保留 240 ms 音频，开口后音频按 160 ms 持续送模型，停顿标记与音频严格排队；无需等整句结束才开始识别。收尾后的空闲静音不继续调用 ASR，连接每 10 秒保活。背景人声、音乐或噪音可能被当作说话，轻声漏检时需要调整麦克风增益或 VAD 参数。
 
 ## 生命周期与数据
 
-OneAxe Voice 同时只持有一个活跃识别引擎。切换时先释放旧模型，再加载新模型；PC 录音期间禁止模型管理抢占。R2T2 允许 PC 与手机共享同一 AsyncLLM，音频窗口和文字状态独立。正常取消、断线和结束保留热模型；明确卸载、切换或全局引擎故障才回收工作进程与 CUDA 子进程。
+OneAxe Voice 同时只持有一个活跃识别引擎。切换时先释放旧模型，再加载新模型；PC 录音期间禁止模型管理抢占。Qwen 流式与 R2T2 均通过 `concurrent_worker` 让 1 路 PC 与 1 路远端共享同一 AsyncLLM，音频窗口、文字状态和取消标识独立；远端名额由手机和 Linux 客户端共用。正常取消、断线和结束保留热模型；明确卸载、切换或全局引擎故障才回收工作进程与 CUDA 子进程。
 
-模型默认常驻。可立即卸载或启用空闲 120 秒自动卸载；切换回已卸载模式需要再次加载。Qwen 流式保留 512 MiB KV 和单请求 graph；R2T2 默认 1 GiB KV、并发 2 路及大小 1/2 的 decode graph。上下文均限制 4096 token，权重、编码器与 CUDA 运行时另占显存；KV 数字不是进程总显存上限。启动前要求至少 7 GiB 空闲。与 VPlus 仍共享物理 GPU，不代表两者并行重负载时没有性能影响。
+远端按 capabilities 判断所选模型是否就绪和能否开始，统一使用移动 V1，不能传 `mode` 或自行选择模型；`vad` 仍不支持远端。本机 V1 则必须传 `mode`，现支持两种流式模式。Qwen 桌面 F8 保留旧 WS 流程，新增 V1 能力不改变其原有 transport。
+
+模型默认常驻。可立即卸载或启用空闲 120 秒自动卸载；切换回已卸载模式需要再次加载。Qwen 流式默认保留 512 MiB KV，R2T2 默认 1 GiB KV；两者默认 `max_num_seqs=2`、decode graph capture sizes 为 `[1, 2]`。上下文均限制 4096 token，权重、编码器与 CUDA 运行时另占显存；KV 数字不是进程总显存上限。启动前要求至少 7 GiB 空闲。与 VPlus 仍共享物理 GPU，不代表两者并行重负载时没有性能影响。
 
 Qwen 流式和 R2T2 工作进程启动时均设置 `OMP_WAIT_POLICY=PASSIVE`，让 CPU 线程在等待时休息，减少等待消耗；仍使用 4 个 CPU 线程，音频特征由 CPU 处理，模型由 GPU 推理。设置只传入对应子进程，不修改父服务或 VPlus 的环境，无需在菜单中配置。
 
 R2T2 采集、音频发送、文字接收及粘贴独立运行；未发送音频最多 2 秒，服务端使用累计音频额度。超限明确结束本轮，保留已收到固定文字，不丢音频后继续假装实时。菜单暂缓粘贴只合并固定全文快照，不阻塞网络。Qwen 流式保留原有最多 400 条的队列语义。
 
-状态接口不包含转写正文。字幕仅通过当前用户可访问的私有 Unix socket 返回；录音和转写不进入常规日志。官方 final 方法中的正文打印被适配器屏蔽。故障诊断位于私有 `runtime/stream-worker.log`。
+使用 V1 的客户端按 capabilities 及本次会话 `ready` / `flow` 动态读取发送额度。R2T2 默认流控窗口 32000 样本；Qwen 为 `max(configured_window, 32000 + max_frame_bytes / 2)`，默认 34560 样本，以容纳跨过 2 秒识别门槛的完整音频帧。真实 `audio_processed_samples` 包含已消费数字静音，但不包含尚未推理的缓冲或额外补零，停顿 flush 后仍按整轮累计。
+
+状态接口不包含转写正文。字幕仅通过当前用户可访问的私有 Unix socket 返回；录音和转写不进入常规日志。异步适配器不执行官方 final 方法中的正文打印，worker 的上游 stdout 也被屏蔽。故障诊断位于私有 `runtime/stream-worker.log`。
 
 ## 验证与边界
 

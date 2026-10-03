@@ -1,4 +1,4 @@
-"""Multiplexed R2T2 AsyncLLM worker; private JSON RPC never logs speech."""
+"""Multiplexed streaming AsyncLLM worker; private JSON RPC never logs speech."""
 
 import asyncio
 import base64
@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import uuid
 
 from .r2t2_async import AsyncR2T2Adapter, AsyncR2T2Decoder, FatalEngineError, SessionCancelled
+from .qwen_async import AsyncQwenAdapter, AsyncQwenDecoder
 
 
 def register_qwen_backend():
@@ -41,7 +42,7 @@ if os.environ.get("ONEAXE_VOICE_REGISTER_QWEN") == "1":
 
 @dataclass
 class Session:
-    decoder: AsyncR2T2Decoder
+    decoder: AsyncR2T2Decoder | AsyncQwenDecoder
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     active: asyncio.Task | None = None
     queued: int = 0
@@ -49,8 +50,11 @@ class Session:
 
 
 class ConcurrentSessions:
-    def __init__(self, model, *, capacity=2, max_queued=64):
+    def __init__(self, model, *, mode="r2t2", capacity=2, max_queued=64):
+        if mode not in {"r2t2", "qwen-stream"}:
+            raise ValueError("Unknown concurrent streaming mode")
         self.model, self.capacity, self.max_queued = model, capacity, max_queued
+        self.decoder_type = AsyncR2T2Decoder if mode == "r2t2" else AsyncQwenDecoder
         self.sessions = {}
         self.instance = uuid.uuid4().hex
 
@@ -71,8 +75,8 @@ class ConcurrentSessions:
                 if len(self.sessions) >= self.capacity:
                     return {**response, "ok": False, "error": "CapacityError", "code": "CAPACITY_EXCEEDED",
                             "message": "Concurrent session capacity reached", "retryable": True, "fatal": False}
-                entry = Session(AsyncR2T2Decoder(self.model, session_id,
-                                               instance=self.instance + "-" + uuid.uuid4().hex))
+                entry = Session(self.decoder_type(self.model, session_id,
+                                                 instance=self.instance + "-" + uuid.uuid4().hex))
                 self.sessions[session_id] = entry
                 return {**response, "ok": True, "ready": True, **entry.decoder.result(), "inference_ms": 0}
             if op in {"cancel", "end"}:
@@ -144,9 +148,12 @@ class ConcurrentSessions:
                 entry.active.cancel()
 
 
-def engine_configuration(model_dir):
+def engine_configuration(model_dir, mode="r2t2"):
+    if mode not in {"r2t2", "qwen-stream"}:
+        raise ValueError("Unknown concurrent streaming mode")
     sequences = int(os.environ.get("ONEAXE_VOICE_STREAM_MAX_NUM_SEQS", "2"))
-    cache = int(os.environ.get("ONEAXE_VOICE_STREAM_KV_CACHE_BYTES", str(1024**3)))
+    default_cache = 512 * 1024**2 if mode == "qwen-stream" else 1024**3
+    cache = int(os.environ.get("ONEAXE_VOICE_STREAM_KV_CACHE_BYTES", str(default_cache)))
     if not 2 <= sequences <= 16 or cache < 512 * 1024**2:
         raise ValueError("Invalid streaming model capacity configuration")
     return {"model": str(model_dir), "dtype": "float16", "gpu_memory_utilization": .30,
@@ -157,7 +164,7 @@ def engine_configuration(model_dir):
                                    "cudagraph_capture_sizes": [1, 2]}}
 
 
-async def load_model(model_dir):
+async def load_model(model_dir, mode="r2t2"):
     os.environ["ONEAXE_VOICE_REGISTER_QWEN"] = "1"
     register_qwen_backend()
     import torch
@@ -170,28 +177,51 @@ async def load_model(model_dir):
     from vllm.sampling_params import RequestOutputKind, SamplingParams
     from vllm.v1.engine.async_llm import AsyncLLM
     from qwen_asr.core.transformers_backend import Qwen3ASRProcessor
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "vendor"))
-    from r2t2 import R2T2ASRModel
-    from r2t2.r2t2_asr import _normalize_punct_by_context, parse_language_output
     from qwen_asr.inference.utils import parse_asr_output
 
-    config = engine_configuration(model_dir)
+    config = engine_configuration(model_dir, mode)
     engine = AsyncLLM.from_engine_args(AsyncEngineArgs(**config))
     try:
         processor = Qwen3ASRProcessor.from_pretrained(str(model_dir), fix_mistral_regex=True, local_files_only=True)
-        official = R2T2ASRModel(backend="vllm", model=engine, processor=processor)
-        helpers = SimpleNamespace(normalize_punctuation=_normalize_punct_by_context,
-                                  parse_language=parse_language_output, parse_output=parse_asr_output)
-        samples = lambda count: SamplingParams(temperature=0.0, max_tokens=count, skip_special_tokens=True,
-                                              output_kind=RequestOutputKind.FINAL_ONLY)
-        return AsyncR2T2Adapter(engine, official, helpers, samples), config["max_num_seqs"]
+        if mode == "qwen-stream":
+            from qwen_asr import Qwen3ASRModel
+            official = Qwen3ASRModel(backend="vllm", model=engine, processor=processor, max_new_tokens=256)
+            helpers = SimpleNamespace(parse_output=parse_asr_output)
+            samples = lambda count: SamplingParams(temperature=0.0, max_tokens=count,
+                                                  output_kind=RequestOutputKind.FINAL_ONLY)
+            adapter = AsyncQwenAdapter(engine, official, helpers, samples)
+        else:
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "vendor"))
+            from r2t2 import R2T2ASRModel
+            from r2t2.r2t2_asr import _normalize_punct_by_context, parse_language_output
+            official = R2T2ASRModel(backend="vllm", model=engine, processor=processor)
+            helpers = SimpleNamespace(normalize_punctuation=_normalize_punct_by_context,
+                                      parse_language=parse_language_output, parse_output=parse_asr_output)
+            samples = lambda count: SamplingParams(temperature=0.0, max_tokens=count, skip_special_tokens=True,
+                                                  output_kind=RequestOutputKind.FINAL_ONLY)
+            adapter = AsyncR2T2Adapter(engine, official, helpers, samples)
+        return adapter, 2 if mode == "qwen-stream" else config["max_num_seqs"]
     except BaseException:
         engine.shutdown()
         raise
 
 
-async def warm_model(model):
+async def warm_model(model, mode="r2t2"):
     import numpy as np
+
+    if mode == "qwen-stream":
+        async def warm_qwen(name, samples):
+            state = model.init_streaming_state(language="Chinese", chunk_size_sec=2,
+                                               unfixed_chunk_num=2, unfixed_token_num=5)
+            if samples > 32000:
+                state.audio_accum = np.zeros(samples - 32000, dtype=np.float32)
+            step = model.prepare_normal(np.zeros(32000, dtype=np.float32), state)
+            await model.generate(step, "warm:" + name)
+
+        await warm_qwen("single", 32000)
+        await asyncio.gather(warm_qwen("first-a", 32000), warm_qwen("first-b", 32000))
+        await asyncio.gather(warm_qwen("window-a", 30 * 16000), warm_qwen("window-b", 30 * 16000))
+        return
 
     async def warm(name, samples, tokens):
         state = model.init_streaming_state(language="Chinese", chunk_size_sec=.32,
@@ -262,15 +292,15 @@ async def run():
     model = None
     try:
         mode, model_dir = sys.argv[1:3]
-        if mode != "r2t2":
-            raise ValueError("Concurrent worker only supports R2T2")
+        if mode not in {"r2t2", "qwen-stream"}:
+            raise ValueError("Unknown concurrent streaming mode")
         with open(os.devnull, "w") as quiet, redirect_stdout(quiet):
-            model, capacity = await load_model(model_dir)
-            await warm_model(model)
+            model, capacity = await load_model(model_dir, mode)
+            await warm_model(model, mode)
             writer.write((json.dumps({"ready": True, "device": "cuda:0", "mode": mode,
                                       "capacity": capacity}) + "\n").encode())
             await writer.drain()
-            await serve(reader, writer, ConcurrentSessions(model, capacity=capacity))
+            await serve(reader, writer, ConcurrentSessions(model, mode=mode, capacity=capacity))
     except Exception as exc:
         frames = traceback.extract_tb(exc.__traceback__)
         where = [f"{Path(frame.filename).name}:{frame.lineno}:{frame.name}" for frame in frames[-5:]]

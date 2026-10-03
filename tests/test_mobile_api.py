@@ -62,7 +62,7 @@ class StubSessions:
                 raise ProtocolError("MODEL_CHANGED", "changed")
             if not self.loaded:
                 raise ProtocolError("MODEL_NOT_READY", "not ready")
-            if self.mode != "r2t2":
+            if self.mode not in ("r2t2", "qwen-stream"):
                 raise ProtocolError("MODEL_UNSUPPORTED", "unsupported")
             if not self.status()["mobile_slots_available"]:
                 raise ProtocolError("CAPACITY_EXCEEDED", "full", True)
@@ -171,8 +171,8 @@ class MobileAPITests(unittest.TestCase):
         return (client or self.client).websocket_connect("/api/mobile/v1/dictation/stream",
                                                        headers=headers or self.mobile_headers)
 
-    def until(self, ws, kind):
-        for _ in range(30):
+    def until(self, ws, kind, limit=30):
+        for _ in range(limit):
             event = ws.receive_json()
             if event["type"] == kind:
                 return event
@@ -184,6 +184,11 @@ class MobileAPITests(unittest.TestCase):
         response = self.client.get("/api/mobile/v1/capabilities", headers=self.mobile_headers)
         self.assertTrue(response.json()["can_start"])
         self.assertEqual(self.engine.manage_calls, 0)
+        self.engine.mode = "qwen-stream"
+        value = self.client.get("/api/mobile/v1/capabilities", headers=self.mobile_headers).json()
+        self.assertTrue(value["can_start"])
+        self.assertTrue(value["stream_supported"])
+        self.assertEqual(value["mode"], "qwen-stream")
         self.engine.mode = "vad"
         value = self.client.get("/api/mobile/v1/capabilities", headers=self.mobile_headers).json()
         self.assertTrue(value["ready"])
@@ -282,6 +287,35 @@ class MobileAPITests(unittest.TestCase):
                 self.assertFalse(self.engine.session_status(pc_ready["session_id"])["terminal_reason"])
                 pc.send_json({"type": "finish", "after_audio_samples": 2560})
                 self.assertTrue(self.until(pc, "final")["complete"])
+
+    def test_qwen_full_frames_cross_decode_boundary_without_credit_deadlock(self):
+        self.engine.mode = "qwen-stream"
+        original_feed = self.engine.feed
+
+        def chunked_feed(session, data):
+            value = original_feed(session, data)
+            return {**value, "audio_processed_samples": value["audio_processed_samples"] // 32000 * 32000}
+
+        self.engine.feed = chunked_feed
+        caps = self.client.get("/api/mobile/v1/capabilities", headers=self.mobile_headers).json()
+        with self.connect() as ws:
+            ws.send_json(self.start())
+            ready = ws.receive_json()
+            self.assertEqual(ready["audio_send_limit"], caps["flow"]["window_samples"])
+            self.assertGreaterEqual(ready["audio_send_limit"], 13 * 2560)
+            for _ in range(13):
+                ws.send_bytes(b"\1\0" * 2560)
+            event = self.until(ws, "partial")
+            while event["audio_processed_samples"] < 32000:
+                event = self.until(ws, "partial")
+            self.assertEqual(event["audio_received_samples"], 13 * 2560)
+            for _ in range(12):
+                ws.send_bytes(b"\1\0" * 2560)
+            ws.send_json({"type": "finish", "after_audio_samples": 64000})
+            final = self.until(ws, "final", limit=64)
+            self.assertEqual(final["audio_processed_samples"], 64000)
+            self.assertTrue(final["complete"])
+            self.assertEqual(self.engine.manage_calls, 0)
 
     def test_flow_limit_is_enforced_before_extra_audio_enters_engine(self):
         self.engine.block = threading.Event()

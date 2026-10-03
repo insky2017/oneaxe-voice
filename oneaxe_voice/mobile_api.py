@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .backend import BusyError
 from .device_auth import MOBILE_READ, MOBILE_STREAM
+from .modes import STREAM_MODES
 
 
 LOGGER = logging.getLogger("uvicorn.error")
@@ -54,13 +55,20 @@ def failure(exc):
     return "SERVICE_UNAVAILABLE", "语音服务暂不可用", True
 
 
+def stream_window_samples(mode, limits):
+    # Qwen consumes 32000 samples per decode. An integral client frame must
+    # be able to cross that boundary before processed credit can advance.
+    minimum = 32000 + limits.max_frame_bytes // 2 if mode == "qwen-stream" else 0
+    return max(limits.window_samples, minimum)
+
+
 def capabilities(engine, limits):
     value = engine.status()
     state = value.get("state", "unloaded")
     if state == "transcribing":
         state = "ready"
     ready = state == "ready" and bool(value.get("model_loaded"))
-    supported = value.get("mode") == "r2t2"
+    supported = value.get("mode") in STREAM_MODES
     slots = int(value.get("mobile_slots_available", 0))
     if state == "error":
         reason = "SERVICE_UNAVAILABLE"
@@ -79,7 +87,8 @@ def capabilities(engine, limits):
             "can_start": reason is None, "unavailable_reason": reason,
             "max_sessions": value.get("max_sessions", 2), "mobile_slots_available": slots,
             "audio": {**AUDIO_FORMAT, "max_frame_bytes": limits.max_frame_bytes},
-            "flow": {"window_samples": limits.window_samples, "client_buffer_max_ms": 2000},
+            "flow": {"window_samples": stream_window_samples(value.get("mode"), limits),
+                     "client_buffer_max_ms": 2000},
             "session_max_seconds": limits.session_seconds}
 
 
@@ -95,7 +104,7 @@ def validate_start(value, mobile):
         valid = valid and all(isinstance(value.get(key), str) and 0 < len(value[key]) <= 128
                               for key in ("expected_server_instance_id", "expected_model_generation"))
     else:
-        valid = valid and value.get("mode") == "r2t2"
+        valid = valid and isinstance(value.get("mode"), str) and value["mode"] in STREAM_MODES
     if not valid:
         raise ProtocolError("INVALID_MESSAGE", "start 消息或音频规格无效")
 
@@ -121,7 +130,7 @@ class V1Stream:
 
     def progress(self):
         return {"audio_received_samples": self.received, "audio_processed_samples": self.processed,
-                "audio_send_limit": self.processed + self.limits.window_samples}
+                "audio_send_limit": self.processed + stream_window_samples(self.binding.get("mode"), self.limits)}
 
     def emit(self, event, close_code=None):
         if self.terminal_enqueued:
@@ -219,7 +228,7 @@ class V1Stream:
                     samples = len(data) // 2
                     if self.received + samples > int(self.limits.session_seconds * 16000):
                         raise ProtocolError("SESSION_LIMIT", "会话达到音频时长上限")
-                    if self.received + samples > self.processed + self.limits.window_samples:
+                    if self.received + samples > self.progress()["audio_send_limit"]:
                         raise ProtocolError("FLOW_CONTROL_EXCEEDED", "音频超过累计发送许可")
                     self.received += samples
                     self.enqueue(("audio", data))
@@ -337,7 +346,7 @@ class V1Stream:
                               hello["expected_server_instance_id"],
                               hello["expected_model_generation"], self.principal.credential_id)
             else:
-                start_args = (self.engine.begin, "r2t2", self.session)
+                start_args = (self.engine.begin, hello["mode"], self.session)
             self.begin_attempted = True
             self.start_task = asyncio.create_task(self.worker_call(*start_args))
             self.binding = await asyncio.shield(self.start_task)

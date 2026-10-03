@@ -170,6 +170,18 @@ def performance_evidence(metrics, args):
 
 
 async def session(url, token, audio, seconds, role, generation, *, cancel_after=None):
+    mode = None
+    if role == "pc":
+        async with httpx.AsyncClient(base_url=url, trust_env=False, timeout=10,
+                                     headers={"Authorization": "Bearer " + token}) as client:
+            response = await client.get("/api/dictation/status")
+            assert response.status_code == 200, "PC status request failed before stream binding"
+            current = response.json()
+        assert current.get("model_loaded") and current.get("mode") in {"r2t2", "qwen-stream"}, \
+            "PC V1 requires an already loaded streaming model"
+        assert tuple(current.get(key) for key in ("server_instance_id", "model_generation")) == generation, \
+            "model changed before PC stream binding"
+        mode = current["mode"]
     ws_url = url.replace("http://", "ws://", 1).replace("https://", "wss://", 1)
     path = "/api/dictation/v1/stream" if role == "pc" else "/api/mobile/v1/dictation/stream"
     headers = {"Authorization": "Bearer " + token}
@@ -180,7 +192,7 @@ async def session(url, token, audio, seconds, role, generation, *, cancel_after=
         hello = dict(type="start", protocol_version=1,
                      audio=dict(encoding="pcm_s16le", sample_rate=16000, channels=1))
         if role == "pc":
-            hello["mode"] = "r2t2"
+            hello["mode"] = mode
         else:
             hello.update(expected_server_instance_id=generation[0], expected_model_generation=generation[1])
         await ws.send(json.dumps(hello))

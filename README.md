@@ -64,6 +64,7 @@ R2T2 使用一份 GPU 权重和独立会话状态，支持 **1 路 PC + 1 路手
 - [R2T2 并发研究](docs/concurrency-research-2026-10-02.md)
 - [R2T2 CPU 被动等待部署与回归](docs/r2t2-passive-release-2026-10-03.md)：正式启用、204 项 CPU 回归、双路 HTTPS/WSS 与取消检查。
 - [Qwen 流式 CPU 优化与部署回归](docs/qwen-passive-release-2026-10-03.md)：单路对照 CPU 降约 40%，流式文字一致，正式接口与取消复用通过。
+- [Qwen / R2T2 统一远端流式接口](docs/unified-stream-2026-10-03.md)：客户端按服务器当前模型工作，统一能力查询、会话隔离与流控；含本轮验证记录。
 - [超过两路的接入与容量研究](docs/multi-stream-capacity-research-2026-10-02.md)：4090 显存核算、速度瓶颈与逐级验证方案；生产仍为两路。
 - [验证记录](docs/validation.md)
 - [实施计划](docs/plan.md)

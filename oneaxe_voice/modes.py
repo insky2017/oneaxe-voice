@@ -6,6 +6,9 @@ MODES = {
     "r2t2": "即听 · R2T2 流式",
 }
 
+# Modes adapted to the shared V1 transport and per-session worker contract.
+STREAM_MODES = frozenset({"qwen-stream", "r2t2"})
+
 
 def validate_mode(mode):
     if mode not in MODES:

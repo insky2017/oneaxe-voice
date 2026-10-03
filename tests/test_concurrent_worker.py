@@ -12,6 +12,7 @@ from oneaxe_voice.concurrent_worker import ConcurrentSessions, engine_configurat
 from oneaxe_voice.r2t2_async import FatalEngineError
 from oneaxe_voice.worker_client import WorkerClient, WorkerRPCError
 from tests.test_r2t2_async import FakeEngine, adapter, speech
+from tests.test_qwen_async import qwen_adapter
 
 
 def request(op, session="pc", rpc="rpc", **values):
@@ -183,6 +184,64 @@ class ConcurrentWorkerTests(unittest.IsolatedAsyncioTestCase):
             await serving
             writer.close()
             await writer.wait_closed()
+
+    async def test_qwen_worker_client_keeps_pc_running_after_remote_cancel_or_end(self):
+        for op in ("cancel", "end"):
+            with self.subTest(op=op):
+                parent, child = socket.socketpair()
+                child.setblocking(False)
+                reader, writer = await asyncio.open_connection(sock=child, limit=200000)
+                gates = {sid: asyncio.Event() for sid in ("pc", "phone")}
+                engine = FakeEngine(gates=gates)
+                sessions = ConcurrentSessions(qwen_adapter(engine), mode="qwen-stream")
+                serving = asyncio.create_task(serve(reader, writer, sessions))
+                client = WorkerClient(parent, timeout=2)
+                writer.write(b'{"ready":true,"mode":"qwen-stream","capacity":2}\n')
+                await writer.drain()
+                try:
+                    self.assertEqual((await asyncio.to_thread(client.wait_ready))["mode"], "qwen-stream")
+                    for sid in gates:
+                        await asyncio.to_thread(client.call, "start", session=sid)
+                    with self.assertRaises(WorkerRPCError) as capacity:
+                        await asyncio.to_thread(client.call, "start", session="third")
+                    self.assertEqual(capacity.exception.code, "CAPACITY_EXCEEDED")
+                    pcm = base64.b64encode(speech(32000)).decode()
+                    pc = asyncio.create_task(asyncio.to_thread(client.call, "audio", session="pc", pcm=pcm))
+                    phone = asyncio.create_task(asyncio.to_thread(client.call, "audio", session="phone", pcm=pcm))
+                    async with asyncio.timeout(2):
+                        while len(engine.calls) != 2:
+                            await asyncio.sleep(0)
+                    ending = await asyncio.to_thread(client.call, op, session="phone")
+                    self.assertTrue(ending["cancelled" if op == "cancel" else "ended"])
+                    with self.assertRaises(WorkerRPCError) as cancelled:
+                        await phone
+                    self.assertEqual(cancelled.exception.code, "CANCELLED")
+                    self.assertFalse(pc.done())
+                    gates["pc"].set()
+                    first = await pc
+                    self.assertEqual(first["audio_processed_samples"], 32000)
+                    self.assertEqual(first["session"], "pc")
+                    await asyncio.to_thread(client.call, "audio", session="pc",
+                                            pcm=base64.b64encode(speech(19)).decode())
+                    final = await asyncio.to_thread(client.call, "flush", session="pc")
+                    self.assertEqual(final["audio_processed_samples"], 32019)
+                    self.assertEqual(final["pending"], "")
+                    silence = await asyncio.to_thread(client.call, "audio", session="pc",
+                                                      pcm=base64.b64encode(bytes(64000)).decode())
+                    self.assertEqual(silence["audio_processed_samples"], 64019)
+                    finished = await asyncio.to_thread(client.call, "finish", session="pc")
+                    self.assertEqual(finished["text"], final["text"])
+                    self.assertEqual(finished["audio_processed_samples"], 64019)
+                    self.assertIsNone(client.failure)
+                    self.assertEqual(len(engine.aborted), 1)
+                    self.assertEqual(engine.aborted[0].split(":")[1], "phone")
+                    self.assertEqual(engine.shutdown_count, 0)
+                    self.assertEqual(set(sessions.sessions), {"pc"})
+                finally:
+                    await asyncio.to_thread(client.close)
+                    await serving
+                    writer.close()
+                    await writer.wait_closed()
 
     def test_capacity_configuration_is_tunable(self):
         with patch.dict("os.environ", {}, clear=True):

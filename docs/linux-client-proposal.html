@@ -16,15 +16,15 @@ h1{letter-spacing:0}.changes{margin:18px 0 7px;padding:13px 16px;border-left:4px
 </style>
 </head>
 <body><main>
-<header><div><div class="eyebrow">ONEAXE VOICE / LINUX CLIENT PROPOSAL</div><h1>轻量 Linux 客户端，连接你的语音服务器</h1><p class="intro">本地负责录音、快捷键与文字输入；服务器负责模型和 GPU 推理。与安卓端共用移动 V1 接口。</p></div><div class="stamp"><span class="badge plan">已安装 · 交付风险待修复</span><br>2026-10-03 · 服务端基线 cdad77c<a href="architecture-map.html">现有服务架构 ↗</a></div></header>
+<header><div><div class="eyebrow">ONEAXE VOICE / LINUX CLIENT PROPOSAL</div><h1>轻量 Linux 客户端，连接你的语音服务器</h1><p class="intro">本地负责录音、快捷键与文字输入；服务器负责模型和 GPU 推理。与安卓端共用移动 V1 接口，按能力绑定已就绪模型。</p></div><div class="stamp"><span class="badge plan">已安装 · Qwen 支持验证中</span><br>2026-10-03 · 本轮扩展 Qwen V1 / 双路<a href="architecture-map.html">现有服务架构 ↗</a></div></header>
 <div class="legend"><span class="badge done">服务端已有</span><span class="badge plan">Linux 首版开发范围</span><span class="badge changed">本次变更</span><span class="badge later">后续规划</span></div>
 <section class="changes" aria-label="相对原方案的本次变更"><div class="changes-head"><h2>本次变更 · 已审核范围与环境调整</h2><span class="badge changed">2026-10-03 更新</span></div><div class="change-grid">
-  <p><strong>① 服务端冻结：</strong>复用现有代码与移动 V1 API。开发中如需改动服务端，必须先说明必要性并获得用户确认。</p>
+  <p><strong>① 服务端边界：</strong>客户端复用统一移动 V1 API。本轮按已批准范围扩展 Qwen 流式与独立双会话，新增能力验证中；客户端不按模型改选接口，也不承担模型控制。</p>
   <p><strong>② 快捷键调整：</strong>Linux 客户端默认 <code>F9</code>，可配置；服务器本机听写继续使用 <code>F8</code>，两个入口独立。</p>
   <p><strong>③ 新增兼容性调整：</strong>原建议 Rust + GTK4 改为 <strong>Rust + GTK3</strong>。本机 Ubuntu 24.04 / GTK 3.24.41，<code>e15l</code> Ubuntu 20.04 / GTK 3.24.20；两机均无 GTK4，不引入 GTK4 升级。</p>
   <p><strong>④ 安装与凭据：</strong>本机和 <code>ssh sky@e15l</code> 分别安装验证，每机独立设备 Bearer；下方增加完整鉴权流程。</p>
   <p><strong>⑤ 公网范围：</strong>仅保留架构与地址规划。本轮不部署公网入口；示例地址不代表公网服务已实现。</p>
-  <p><strong>⑥ 当前状态：</strong>客户端已在两机安装；本机 F9 完整 GTK 输入流程与 10 分钟真实双路已通过。目标卡顿时的剪贴板覆盖缺陷已复现，完整修复仍待处理，不标记全部完成。</p>
+  <p><strong>⑥ 当前状态：</strong>客户端已在两机安装；旧 R2T2 基线的本机 F9 完整 GTK 输入流程与 10 分钟真实双路已通过。Qwen V1 / 双路是本轮更新，验证中，不能继承该结论。目标卡顿时的剪贴板覆盖缺陷已复现，完整修复仍待处理。</p>
   <p><strong>⑦ 最新验收范围：</strong>用户已接受 <code>e15l</code> 按远程条件做有限测试：安装、鉴权、采集、识别与会话隔离；不要求解锁后的桌面 F9 验收。本机仍验证真实输入，并增加“输入框文字与复制全文逐字一致”的检查。</p>
   <p><strong>⑧ 交付风险已复现：</strong>目标输入框忙时，后续增量可能覆盖尚未读取的剪贴板。已完成隔离调查；原 F8 桌面交付层修复仍需用户批准。新客户端已串行化手动复制与自动输入，但读取确认仍待处理。</p>
 </div></section>
@@ -33,7 +33,7 @@ h1{letter-spacing:0}.changes{margin:18px 0 7px;padding:13px 16px;border-left:4px
 
 <section class="panel" id="framework" role="tabpanel" aria-labelledby="tab-framework">
 <div class="panel-head"><div><h2>一个客户端，两种网络入口</h2><p>独立客户端工程 <code>oneaxe-voice-linux</code>。保留听写体验，模型管理留在服务器端。</p></div><span class="badge changed">新增调整 · Rust + GTK3</span></div>
-<p class="topnote boundary"><strong>服务端代码与 API 冻结：</strong>本轮仅开发客户端并安装验证。任何必要的服务端改动，先向用户说明并确认后再执行。</p>
+<p class="topnote boundary"><strong>本轮服务端扩展：</strong>已批准新增 Qwen 流式 V1 与独立双会话，验证中。远端仍按统一 capabilities 与移动 V1 接入，无模型选择权；原客户端安装阶段的服务端冻结规则不代表本轮能力未扩展。</p>
 <div class="architecture" aria-label="Linux客户端通过HTTPS和WSS连接现有Voice服务端的架构图">
   <div class="group client"><div class="group-head"><h3>Linux 电脑</h3><span class="badge plan">开发中</span></div>
     <div class="block"><h3>状态图标 / 小窗口 / 设置</h3><p>开始、停止、取消、复制结果；填写服务器地址与设备凭据。快捷键默认 F9，可配置。</p></div><div class="arrow">↓ <small>单实例状态机</small></div>
@@ -52,13 +52,13 @@ h1{letter-spacing:0}.changes{margin:18px 0 7px;padding:13px 16px;border-left:4px
   <div class="group server"><div class="group-head"><h3>OneAxe Voice 服务器</h3><span class="badge done">已有</span></div>
     <div class="block"><h3>设备认证 + 移动 V1 入口</h3><p><code>GET capabilities</code><br><code>WS dictation/stream</code><br>与安卓端使用相同契约。</p></div><div class="arrow">↓</div>
     <div class="block"><h3>会话准入 / 流控 / 取消隔离</h3><p>绑定已就绪模型；独立会话和文字状态，取消只影响本路。</p></div><div class="arrow">↓</div>
-    <div class="block"><h3>R2T2 → vLLM → GPU</h3><p>共享模型权重，执行语音识别；返回固定文字与待确认尾部。</p></div>
+    <div class="block"><h3>Qwen / R2T2 → AsyncLLM → GPU</h3><p>concurrent_worker 共享一份所选模型，各会话独立 decoder；返回固定文字与待确认尾部。Qwen 新支持验证中。</p></div>
     <div class="block" style="margin-top:15px"><h3>本机 PC 管理入口</h3><p>负责加载、选择与卸载模型，以及签发 / 吊销设备凭据。本机听写 F8 保留；Linux 远端 App 仅查询能力与识别。</p></div>
     <p class="group-footer">复用现有服务协议；服务端模型、权限及容量规则继续生效。安卓与 Linux 首版均使用 Tailnet；通用 HTTPS 地址属于后续公网规划。</p>
   </div>
 </div>
 <div class="capacity"><div class="callout highlight"><h3>当前的远端名额由 Linux 和安卓共用</h3><div class="capacity-path"><span class="pill">本机 PC：保留 1 路</span><span>＋</span><span class="pill">Linux 或安卓：共 1 路</span></div><p>即使本机 PC 空闲，Linux 与安卓目前也不能同时听写。增加客户端种类不会自动增加并发容量。两台 Linux 客户端分别安装验证，不意味着新增远端名额。</p></div><div class="callout"><h3>公网地址仅作规划</h3><p>未来公开服务器须提供同一移动 V1 契约，并另行部署有效 TLS 网关和做真实网络验收。当前入口仍限定 Tailnet；本轮不实施公网部署。</p></div></div>
-<div class="features"><div class="callout"><h3>日常操作与快捷键</h3><p>Linux 默认 F9 开始，再按 F9 停止；支持修改。服务器本机 F8 保留。停顿自动收尾、候选字幕、固定文字自动输入。</p></div><div class="callout"><h3>更小的客户端职责</h3><p>只维护音频、会话和文字交付。当前远端支持 R2T2；服务端未就绪时清晰提示。</p></div><div class="callout"><h3>明确的状态</h3><p>未配置、连接检查、可开始、录音中、正在收尾、连接异常。网络连接成功与模型就绪分开显示。</p></div></div>
+<div class="features"><div class="callout"><h3>日常操作与快捷键</h3><p>Linux 默认 F9 开始，再按 F9 停止；支持修改。服务器本机 F8 保留，Qwen F8 继续旧 WS。停顿自动收尾、候选字幕、固定文字自动输入。</p></div><div class="callout"><h3>更小的客户端职责</h3><p>只维护音频、会话和文字交付。按 capabilities 使用已就绪 Qwen 流式或 R2T2，不传 mode；vad 不支持远端。Qwen 本轮验证中。</p></div><div class="callout"><h3>明确的状态</h3><p>未配置、连接检查、可开始、录音中、正在收尾、连接异常。网络连接成功与模型就绪分开显示。</p></div></div>
 </section>
 
 <section class="panel" id="workflow" role="tabpanel" aria-labelledby="tab-workflow" hidden>
@@ -84,7 +84,7 @@ h1{letter-spacing:0}.changes{margin:18px 0 7px;padding:13px 16px;border-left:4px
 </section>
 
 <section class="panel" id="api" role="tabpanel" aria-labelledby="tab-api" hidden>
-<div class="panel-head"><div><h2>两条连接接口，一套双向消息</h2><p>下列接口服务端已实现并冻结；Linux 客户端按现有契约接入。WS 控制消息不另设 REST 地址。</p></div><span class="badge done">移动 V1 · protocol_version = 1</span></div>
+<div class="panel-head"><div><h2>两条连接接口，一套双向消息</h2><p>Qwen 与 R2T2 使用同一路径和能力驱动契约；Qwen 新支持本轮验证中。WS 控制消息不另设 REST 地址。</p></div><span class="badge done">移动 V1 · protocol_version = 1</span></div>
 <div class="hostbar"><div><strong style="font-size:13px">服务器地址示例</strong><p>仅切换图中示例，不保存设置、不连接服务器。</p><p class="public-note" data-network-note>本轮安装验证使用 Tailscale 入口；公网示例仅规划，尚未实现。</p></div><div class="presets" role="group" aria-label="接口地址示例"><button type="button" data-server="tailnet" aria-pressed="true">Tailscale 内网</button><button type="button" data-server="public" aria-pressed="false">公网规划示例</button></div></div>
 <div class="table-wrap"><table><caption class="sr-only">客户端调用的 HTTP 和 WebSocket 接口</caption><thead><tr><th style="width:44%">接口</th><th>作用与返回</th><th style="width:21%">调用时机 / 权限</th></tr></thead><tbody>
 <tr><td><span class="verb">GET</span><code>/api/mobile/v1/capabilities</code><code class="endpoint" data-endpoint="capabilities">https://rtx4090.nase-stairs.ts.net:8097/api/mobile/v1/capabilities</code></td><td>查询模型、协议、可开始状态、名额和音频 / 流控参数。<p>关键字段：<code>ready</code>、<code>can_start</code>、<code>unavailable_reason</code>、<code>server_instance_id</code>、<code>model_generation</code>、<code>audio</code>、<code>flow</code>。查询不加载模型，也不占名额。</p></td><td>测试连接、开始听写前、错误后重新检查。<p><code>voice.mobile.read</code></p></td></tr>
@@ -126,6 +126,7 @@ h1{letter-spacing:0}.changes{margin:18px 0 7px;padding:13px 16px;border-left:4px
 <tr><td><code>keepalive</code></td><td>会话身份、<code>seq</code>、当前音频进度</td><td>确认连接仍活跃；不当作文字更新。</td></tr>
 </tbody></table></div>
 <p class="note">ready 后，事件都带 <code>server_instance_id + model_generation + session_id + seq</code>。seq 递增但可跳号；它是事件序号，不是字数。建会话前失败可返回 <code>session_id:null, seq:0</code>。</p>
+<p class="note">流控按 capabilities 的 <code>flow.window_samples</code> 和实际 ready / flow 的 <code>audio_send_limit</code> 动态读取。R2T2 默认 32000 样本；Qwen 为 <code>max(configured_window, 32000 + max_frame_bytes / 2)</code>，默认 34560，确保整帧能跨过 2 秒推理门槛。<code>audio_processed_samples</code> 只计真实已处理 PCM，包含数字静音，不含未推理缓冲或 80 ms 补零，flush 不清零。</p>
 <details><summary>最小 start / partial 示例</summary><div class="codegrid"><pre><code>{
   "type": "start",
   "protocol_version": 1,
@@ -157,7 +158,7 @@ h1{letter-spacing:0}.changes{margin:18px 0 7px;padding:13px 16px;border-left:4px
 <tr><td><code>SERVICE_UNAVAILABLE</code></td><td>服务器暂不可用</td><td>状态诊断按 2 / 4 / 8 秒最多重试三次；录音仍由用户启动。</td></tr>
 <tr><td>TLS / DNS / 网络错误</td><td>证书身份错误 / 无法连接</td><td>保留固定文字；证书身份错误不自动重试、不跳过校验。</td></tr>
 </tbody></table></div></details>
-<details><summary>接口边界与设备凭据的取得</summary><p>本机 Linux 客户端与 e15l 分别使用独立设备凭据，完整配发流程见上方。客户端不复用安卓凭据或本机管理令牌。</p><p>管理员的 <code>GET/POST /api/devices</code>、设备 <code>rotate/revoke</code> 以及模型 <code>prepare/unload/policy</code> 属于本机管理接口，Linux App 不调用。远端连接检查统一用 capabilities；不调用远端 <code>/health</code> 或旧的转写 / 本机 V1 接口。服务端代码与 API 本轮冻结；必要改动须先确认。</p><p>每路输入消息（音频 + 控制）最多 100 条/秒。正常完成 / 取消 close 1000；已建 WS 的错误尽力先发 error，再关闭。完整状态码与契约以移动 V1 文档为准。</p></details>
+<details><summary>接口边界与设备凭据的取得</summary><p>本机 Linux 客户端与 e15l 分别使用独立设备凭据，完整配发流程见上方。客户端不复用安卓凭据或本机管理令牌。</p><p>管理员的 <code>GET/POST /api/devices</code>、设备 <code>rotate/revoke</code> 以及模型 <code>prepare/unload/policy</code> 属于本机管理接口，Linux App 不调用。远端连接检查统一用 capabilities；不调用远端 <code>/health</code> 或旧的转写 / 本机 V1 接口。本机 V1 虽接受 Qwen / R2T2 且 PC start 传 mode，远端仍只绑定既有代次，不能传 mode。</p><p>每路输入消息（音频 + 控制）最多 100 条/秒。正常完成 / 取消 close 1000；已建 WS 的错误尽力先发 error，再关闭。完整状态码与契约以移动 V1 文档为准。</p></details>
 <div class="links"><a href="mobile-api-v1.md">完整移动 V1 契约 ↗</a><a href="mobile-deployment.md">服务器入口与凭据操作 ↗</a></div>
 </section>
 
@@ -186,12 +187,12 @@ h1{letter-spacing:0}.changes{margin:18px 0 7px;padding:13px 16px;border-left:4px
 <tr><td>音频与 VAD</td><td>首版复用已验证的 parec 采集方式与 WebRTC VAD 规则；按格式输出 PCM</td><td>复用系统 PipeWire / PulseAudio 兼容层；不在客户端提取模型特征。</td></tr>
 <tr><td>桌面输入</td><td>X11 使用 xclip / xdotool；GNOME 自定义快捷键调用 App --toggle，经单实例本地 IPC 分发</td><td>核对目标窗口、顺序追加、不发送回车；可复用行为规范与测试样本。</td></tr>
 </tbody></table></div>
-<div class="scope-grid"><div class="callout"><span class="badge plan">已审核首版范围</span><ul><li>可填写服务器 URL 与独立设备凭据。</li><li>R2T2 流式、停止 / 取消 / 复制。</li><li>麦克风选择、可配置 F9、状态与候选字幕。</li><li>X11 自动粘贴、焦点变化后只复制。</li><li>流控、错误提示与 Secret Service 凭据保存。</li><li>本机与 ssh sky@e15l 安装、分别验证。</li></ul></div><div class="callout"><span class="badge done">冻结并复用的服务能力</span><ul><li>能力查询和移动 V1 双向流。</li><li>每设备 Bearer、吊销与轮换。</li><li>模型代次绑定、固定前缀与序号。</li><li>独立取消；保护已有本机 F8 会话。</li><li>当前 1 PC + 1 远端、仅 R2T2。</li></ul></div><div class="callout"><span class="badge later">后续规划 · 本轮不实现</span><ul><li>公网网关部署与跨公网验收。</li><li>Wayland 全局快捷键和自动输入。</li><li>更多远端同时接入。</li><li>Qwen 远端流式协议与并发支持。</li><li>多服务器切换、长期历史、文字润色。</li></ul></div></div>
+<div class="scope-grid"><div class="callout"><span class="badge plan">已审核首版范围</span><ul><li>可填写服务器 URL 与独立设备凭据。</li><li>能力驱动的流式、停止 / 取消 / 复制；旧 R2T2 已验证，新增 Qwen 验证中。</li><li>麦克风选择、可配置 F9、状态与候选字幕。</li><li>X11 自动粘贴、焦点变化后只复制。</li><li>流控、错误提示与 Secret Service 凭据保存。</li><li>本机与 ssh sky@e15l 安装、分别验证。</li></ul></div><div class="callout"><span class="badge done">统一接入的服务能力</span><ul><li>能力查询和移动 V1 双向流。</li><li>每设备 Bearer、吊销与轮换。</li><li>模型代次绑定、固定前缀与序号。</li><li>独立取消；保护已有本机 F8 会话。</li><li>1 PC + 1 远端；Qwen / R2T2 共享 AsyncLLM 与独立状态。</li><li>Qwen 512 MiB KV、R2T2 1 GiB；两者双 seq / graphs [1, 2]，保留 4 CPU 线程 / PASSIVE。</li></ul></div><div class="callout"><span class="badge later">后续规划 · 本轮不实现</span><ul><li>公网网关部署与跨公网验收。</li><li>Wayland 全局快捷键和自动输入。</li><li>更多远端同时接入。</li><li>多服务器切换、长期历史、文字润色。</li></ul></div></div>
 <details><summary>公网接入规划：本轮不部署</summary><p><span class="badge later">仅规划 · 尚未实现</span> 后续客户端可扩展为通用 HTTPS 根地址；首版仅接受 Tailnet 地址，现有服务启动配置使用 <code>.ts.net</code> 证书名。未来可另设公网 HTTPS 反向代理，仅允许两条移动 V1 路径，并通过可达的 Tailnet TLS 入口访问当前后端。</p><p>规划中的网关需要有效证书、WS Upgrade / 长连接支持、保留设备 Authorization、合适的连接限制；额外网关认证不能覆盖设备 Bearer。上游证书和主机名同样校验。</p><p>若未来反代改接服务器 loopback，必须严格限制两条 V1 路由，不得整站映射本机管理接口。直接绑定公网地址则需要另改监听配置，并先获得用户针对服务端变更的确认。这些部署均尚未执行。</p></details>
 <details><summary>双机安装与开发后的验收顺序</summary><ul><li>先测协议：能力检查、握手、额度、序号、固定前缀、finish / cancel / 断线；模拟结果与真实服务器测试分别记录。</li><li>分别在本机 Ubuntu 24.04 / GTK 3.24.41 与 ssh sky@e15l 的 Ubuntu 20.04 / GTK 3.24.20 安装；检查包依赖、程序启动、Secret Service、桌面会话及实际麦克风。安装成功不等于识别与输入验收完成。</li><li>再测真实 Linux：麦克风、停顿补字、默认 F9 及自定义快捷键、候选字幕、复制及 X11 目标变化；服务器本机 F8 保留并单独检查。</li><li>最后测真实双路：服务器本机 PC + 一台 Linux 远端持续至少 10 分钟，确认两端持续出字、无串流、无不断增长的积压；Linux 取消不影响 PC。两台 Linux 分别验证。</li><li>Linux 与安卓互换占用远端名额；第二个远端应明确收到容量不足。公网验收属于后续规划，本轮不执行。</li></ul></details>
-<div class="review"><h3>已审核方案 · 当前开发中</h3><p>独立轻量客户端；单服务器 URL + 每机独立设备凭据；首版 R2T2 / X11 自动输入；默认 F9 可配置、本机 F8 保留。<strong>新增环境调整：Rust + GTK3。</strong> 本机与 e15l 分别安装验证，服务端代码与 API 冻结，必要改动先确认；公网仅规划。</p></div>
+<div class="review"><h3>已审核方案 · Qwen 支持验证中</h3><p>独立轻量客户端；单服务器 URL + 每机独立设备凭据；移动 V1 按能力接入 Qwen 流式 / R2T2，不由远端选择模型；默认 F9 可配置、本机 F8 保留。<strong>客户端环境：Rust + GTK3。</strong> 本机与 e15l 的旧 R2T2 验证不替代本轮 Qwen 验收；公网仅规划。</p></div>
 </section>
-<footer><span>客户端已安装；本机正常输入与双路通过，目标卡顿时的交付风险待修复。e15l 按用户认可的远程范围验证；公网仅规划。</span><span><a href="mobile-api-v1.md">接口契约</a> · <a href="mobile-deployment.md">当前部署</a> · <a href="audio-pipeline.html">现有音频流水线</a></span></footer>
+<footer><span>客户端已安装；旧 R2T2 输入与双路已验证，Qwen 新支持验证中，目标卡顿时的交付风险待修复。e15l 按用户认可范围验证；公网仅规划。</span><span><a href="mobile-api-v1.md">接口契约</a> · <a href="mobile-deployment.md">当前部署</a> · <a href="audio-pipeline.html">现有音频流水线</a></span></footer>
 </main>
 <script>
 'use strict';

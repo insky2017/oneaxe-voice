@@ -191,7 +191,7 @@ class EngineSessionsTests(unittest.TestCase):
         self.assertEqual(self.workers[0].calls[-1], ("cancel", "mobile"))
         self.assertTrue(self.workers[0].closed)
         self.assert_code("MODEL_CHANGED", self.router.feed, "mobile", b"\1\0")
-        self.assert_code("MODEL_UNSUPPORTED", self.mobile, "another")
+        self.assertEqual(self.mobile("another")["mode"], "qwen-stream")
 
     def test_unload_and_reload_have_distinct_generations(self):
         self.router.prepare("r2t2")
@@ -278,12 +278,20 @@ class EngineSessionsTests(unittest.TestCase):
         self.factory.assert_called_once()
         self.assertFalse(self.router.gate.locked())
 
-    def test_legacy_qwen_cancel_keeps_its_gpu_worker_resident(self):
+    def test_qwen_cancel_keeps_worker_and_other_session_resident(self):
         binding = self.router.begin("qwen-stream", "pc")
         worker = self.workers[0]
+        mobile = self.mobile()
+        self.assertEqual(mobile["mode"], "qwen-stream")
+        self.assert_code("CAPACITY_EXCEEDED", self.mobile, "third")
+        self.router.feed("mobile", b"\1\0" * 20)
         self.router.end("pc", abort=True)
         self.assertFalse(worker.closed)
-        self.assertEqual(worker.calls, [("start", None), ("start", None)])
+        self.assertEqual(worker.calls[-1], ("cancel", "pc"))
+        self.assertEqual(self.router.feed("mobile", b"\1\0" * 5)["audio_processed_samples"], 25)
+        self.assertEqual(self.router.finish("mobile")["text"], "mobilemobile")
+        self.router.end("mobile")
+        self.assertEqual(worker.sessions, {})
         self.assertEqual(self.router.status()["model_generation"], binding["model_generation"])
         self.assertFalse(self.router.gate.locked())
 

@@ -84,7 +84,7 @@ class WorkerEnvironmentTests(unittest.TestCase):
                 else:
                     os.environ["OMP_WAIT_POLICY"] = policy
                 launch = self.start("qwen-stream")
-                self.assertEqual(launch["command"][2], "oneaxe_voice.stream_worker")
+                self.assertEqual(launch["command"][2], "oneaxe_voice.concurrent_worker")
                 self.assertEqual(launch["env"]["OMP_WAIT_POLICY"], "PASSIVE")
                 if policy is None:
                     self.assertNotIn("OMP_WAIT_POLICY", os.environ)
