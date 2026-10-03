@@ -105,7 +105,7 @@ impl fmt::Display for ServiceCode {
             Self::Unauthorized => "设备凭据无效或已吊销",
             Self::Forbidden => "设备凭据缺少所需权限",
             Self::ModelNotReady => "请等待 PC 模型加载完成",
-            Self::ModelUnsupported => "PC 当前模型不支持流式听写",
+            Self::ModelUnsupported => "服务端当前模型尚未接入移动 V1 流式协议",
             Self::ModelChanged => "PC 模型已变化，请重新查询后开始",
             Self::CapacityExceeded => "暂时没有可用的移动会话名额",
             Self::InvalidMessage => "语音协议消息无效",
@@ -248,7 +248,6 @@ impl Capabilities {
         if self.can_start
             && (!self.ready
                 || !self.stream_supported
-                || self.mode.as_deref() != Some("r2t2")
                 || self.model_state != "ready"
                 || self.mobile_slots_available == 0
                 || self.unavailable_reason.is_some()
@@ -667,20 +666,78 @@ mod tests {
 
     #[test]
     fn start_contains_only_mobile_contract_fields() {
-        let value: serde_json::Value =
-            serde_json::from_str(&start_message(&capabilities()).unwrap()).unwrap();
-        assert_eq!(value.as_object().unwrap().len(), 5);
-        assert!(value.get("mode").is_none());
-        assert!(value.get("token").is_none());
+        for mode in ["r2t2", "qwen-stream", "future-stream"] {
+            let mut caps = capabilities();
+            caps.mode = Some(mode.into());
+            let value: serde_json::Value =
+                serde_json::from_str(&start_message(&caps).unwrap()).unwrap();
+            assert_eq!(
+                value,
+                serde_json::json!({
+                    "type":"start", "protocol_version":1,
+                    "expected_server_instance_id":"boot",
+                    "expected_model_generation":"generation",
+                    "audio":{"encoding":"pcm_s16le","sample_rate":16000,"channels":1}
+                })
+            );
+        }
     }
 
     #[test]
-    fn inconsistent_supported_mode_cannot_start() {
-        let mut value = capabilities();
-        value.mode = Some("qwen-stream".into());
+    fn can_start_depends_on_capabilities_instead_of_model_labels() {
+        for mode in [
+            Some("r2t2"),
+            Some("qwen-stream"),
+            Some("future-stream"),
+            None,
+        ] {
+            let mut caps = capabilities();
+            caps.mode = mode.map(str::to_owned);
+            caps.model_id = None;
+            caps.ensure_can_start().unwrap();
+            SessionValidator::new(&caps).unwrap();
+        }
+    }
+
+    #[test]
+    fn advertised_start_requires_consistent_protocol_audio_flow_and_readiness() {
+        let invalid: [fn(&mut Capabilities); 10] = [
+            |caps| caps.protocol_version = 2,
+            |caps| caps.audio.sample_rate = 48000,
+            |caps| caps.audio.max_frame_bytes = 3,
+            |caps| caps.flow.window_samples = 0,
+            |caps| caps.flow.client_buffer_max_ms = 0,
+            |caps| caps.ready = false,
+            |caps| caps.stream_supported = false,
+            |caps| caps.model_state = "loading".into(),
+            |caps| caps.mobile_slots_available = 0,
+            |caps| caps.model_generation = None,
+        ];
+        for mutate in invalid {
+            let mut caps = capabilities();
+            caps.mode = Some("qwen-stream".into());
+            mutate(&mut caps);
+            assert_eq!(
+                caps.ensure_can_start(),
+                Err(SessionError::InvalidCapabilities)
+            );
+        }
+    }
+
+    #[test]
+    fn unavailable_qwen_honors_service_capabilities() {
+        let mut caps = capabilities();
+        caps.mode = Some("qwen-stream".into());
+        caps.can_start = false;
+        caps.stream_supported = false;
+        caps.unavailable_reason = Some(ServiceCode::ModelUnsupported);
         assert_eq!(
-            value.ensure_can_start(),
-            Err(SessionError::InvalidCapabilities)
+            caps.ensure_can_start(),
+            Err(SessionError::Remote {
+                code: ServiceCode::ModelUnsupported,
+                retryable: false,
+                retry_after_ms: None,
+            })
         );
     }
 

@@ -135,9 +135,7 @@ def observe_pc(helper, observations):
 
 
 def require_preserved(status, before, pc_id):
-    shared.require(status.get("mode") == "r2t2" and status.get("model_loaded") is True
-        and all(status.get(key) == before[key] for key in
-                ("server_instance_id", "model_generation", "worker_pid")), "MODEL_OR_WORKER_CHANGED")
+    shared.require_model_preserved(status, before)
     sessions = status.get("active_sessions")
     shared.require(isinstance(sessions, list) and len(sessions) <= 2, "UNEXPECTED_SESSION_COUNT")
     pc = [row for row in sessions if row.get("kind") == "pc"]
@@ -285,9 +283,12 @@ async def run(args):
         async with helper.httpx.AsyncClient(base_url=settings.api_url, trust_env=False,
                 follow_redirects=False, timeout=5, headers={"Authorization": "Bearer " + token}) as client:
             before = await shared.service_status(client)
-            shared.require_ready(before)
+            shared.require_ready(before, args.expected_mode)
+            report["model_mode"] = before["mode"]
+            report["remote_capabilities_gate"] = "installed_Rust_client_before_audio"
             generation = (before["server_instance_id"], before["model_generation"])
-            pc = asyncio.create_task(helper.session(settings.api_url, token, audio, args.seconds, "pc", generation))
+            pc = asyncio.create_task(helper.session(settings.api_url, token, audio, args.seconds,
+                "pc", generation))
             tasks.append(pc)
             watcher = asyncio.create_task(guard(client, settings.runtime_dir, before, observations, pc, stop, report))
             tasks.append(watcher)
@@ -392,6 +393,7 @@ if __name__ == "__main__":
     parser.add_argument("--pc-audio", type=Path, required=True)
     parser.add_argument("--remote-pcm", required=True)
     parser.add_argument("--remote-keyword", default=shared.REMOTE_KEYWORD)
+    parser.add_argument("--expected-mode", help="Optional assertion for the server's current mode; does not select a model")
     parser.add_argument("--local-client", type=Path, default=Path.home() / ".local/bin/oneaxe-voice-linux")
     parser.add_argument("--seconds", type=int, default=45)
     parser.add_argument("--remote-seconds", type=int, default=10)

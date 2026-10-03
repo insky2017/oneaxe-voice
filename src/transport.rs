@@ -720,6 +720,8 @@ mod tests {
         let start: serde_json::Value = serde_json::from_str(start.to_text().unwrap()).unwrap();
         assert_eq!(start["type"], "start");
         assert!(start.get("mode").is_none());
+        assert!(start.get("model").is_none());
+        assert!(start.get("model_id").is_none());
         server.send(event("ready",1,serde_json::json!({"audio_received_samples":0,"audio_processed_samples":0,"audio_send_limit":window}))).await.unwrap();
     }
 
@@ -868,7 +870,9 @@ mod tests {
     #[tokio::test]
     async fn flush_and_finish_follow_audio_in_the_same_fifo() {
         let (client, mut server) = pair().await;
-        let capabilities = caps(32000);
+        let mut capabilities = caps(32000);
+        capabilities.mode = Some("qwen-stream".into());
+        capabilities.model_id = Some("Qwen3-ASR".into());
         let (handle, input) = session_channel(&capabilities).unwrap();
         let (sender, _) = events::channel();
         let task = tokio::spawn(run_connected(client, capabilities, input, sender));
@@ -913,7 +917,9 @@ mod tests {
     #[tokio::test]
     async fn cancel_during_exhausted_credit_ignores_late_text() {
         let (client, mut server) = pair().await;
-        let capabilities = caps(1);
+        let mut capabilities = caps(1);
+        capabilities.mode = Some("qwen-stream".into());
+        capabilities.model_id = Some("Qwen3-ASR".into());
         let (handle, input) = session_channel(&capabilities).unwrap();
         let (sender, receiver) = events::channel();
         let task = tokio::spawn(run_connected(client, capabilities, input, sender));

@@ -52,6 +52,7 @@ CLIENT_STATIC_ERRORS = {
     "FORBIDDEN": "\u8bbe\u5907\u51ed\u636e\u7f3a\u5c11\u6240\u9700\u6743\u9650",
     "MODEL_CHANGED": "PC \u6a21\u578b\u5df2\u53d8\u5316\uff0c\u8bf7\u91cd\u65b0\u67e5\u8be2\u540e\u5f00\u59cb",
     "MODEL_NOT_READY": "\u8bf7\u7b49\u5f85 PC \u6a21\u578b\u52a0\u8f7d\u5b8c\u6210",
+    "MODEL_UNSUPPORTED": "\u670d\u52a1\u7aef\u5f53\u524d\u6a21\u578b\u5c1a\u672a\u63a5\u5165\u79fb\u52a8 V1 \u6d41\u5f0f\u534f\u8bae",
     "SERVICE_UNAVAILABLE": "\u8bed\u97f3\u670d\u52a1\u6682\u4e0d\u53ef\u7528",
     "TLS_IDENTITY": "TLS \u8bc1\u4e66\u6216\u670d\u52a1\u8eab\u4efd\u9a8c\u8bc1\u5931\u8d25",
     "CONNECTION_LOST": "\u8fde\u63a5\u5df2\u65ad\u5f00\uff0c\u5df2\u6536\u5230\u6587\u5b57\u4fdd\u7559\uff0c\u5c3e\u90e8\u53ef\u80fd\u672a\u5b8c\u6210",
@@ -233,14 +234,23 @@ async def service_status(client):
     return value
 
 
-def require_ready(status):
-    require(status.get("mode") == "r2t2" and status.get("model_loaded") is True
+def require_ready(status, expected_mode=None):
+    require(status.get("model_loaded") is True
             and status.get("state") == "ready" and status.get("busy") is False
             and status.get("pc_busy") is False and status.get("active_sessions") == [],
             "SERVICE_NOT_READY_OR_BUSY")
+    require(isinstance(status.get("mode"), str) and bool(status["mode"]), "SERVICE_MODE_MISSING")
+    if expected_mode is not None:
+        require(status["mode"] == expected_mode, "UNEXPECTED_SERVICE_MODE")
     require(all(isinstance(status.get(key), str) and status[key]
                 for key in ("server_instance_id", "model_generation")), "SERVICE_IDENTITY_MISSING")
     require(type(status.get("worker_pid")) is int, "SERVICE_WORKER_MISSING")
+
+
+def require_model_preserved(status, before):
+    require(status.get("model_loaded") is True and all(status.get(key) == before.get(key)
+            for key in ("server_instance_id", "model_generation", "worker_pid", "mode", "model_id")),
+            "MODEL_OR_WORKER_CHANGED")
 
 
 def ssh_command(mode, source, seconds, keyword=REMOTE_KEYWORD):
@@ -444,10 +454,7 @@ async def monitor(client, runtime, before, report, stop):
     while not stop.is_set():
         require_desktop_idle(await desktop_status(runtime))
         status = await service_status(client)
-        require(status.get("mode") == "r2t2" and status.get("model_loaded") is True
-                and all(status.get(key) == before[key]
-                        for key in ("server_instance_id", "model_generation", "worker_pid")),
-                "MODEL_OR_WORKER_CHANGED")
+        require_model_preserved(status, before)
         sessions = status.get("active_sessions")
         require(isinstance(sessions, list) and len(sessions) <= 2, "UNEXPECTED_ACTIVE_SESSIONS")
         active = [row for row in sessions if row.get("state") == "active"]
@@ -496,6 +503,10 @@ async def run(args):
     report = {"passed": False, "requested_dual_seconds": args.seconds,
         "pc_capture_seconds": args.seconds + PC_START_MARGIN_SECONDS,
         "remote_capture_seconds": args.seconds, "overlap_tolerance_seconds": 2,
+        "pc_performance_thresholds": {"max_processed_lag_seconds": args.max_processed_lag_seconds,
+            "max_lag_growth_seconds": 0.5, "max_fixed_gap_seconds": 30},
+        "remote_progress_thresholds": {"max_observed_lag_samples": args.max_observed_lag_samples,
+            "max_buffered_samples": 32000},
         "unverified_remote_metrics": ["early_late_lag_growth", "last_fixed_text_time", "max_fixed_text_gap", "transcript_sha256"],
         "microphone_and_gui_acceptance_included": False}
     report["remote_expected_keyword_sha256"] = digest(args.remote_keyword.encode())
@@ -515,7 +526,9 @@ async def run(args):
         async with helper.httpx.AsyncClient(base_url=settings.api_url, trust_env=False,
                 follow_redirects=False, timeout=5, headers={"Authorization": "Bearer " + pc_token}) as client:
             before = await service_status(client)
-            require_ready(before)
+            require_ready(before, args.expected_mode)
+            report["model_mode"] = before["mode"]
+            report["remote_capabilities_gate"] = "installed_Rust_client_before_audio"
             require_desktop_idle(await desktop_status(settings.runtime_dir))
             generation = (before["server_instance_id"], before["model_generation"])
             watcher = asyncio.create_task(monitor(client, settings.runtime_dir, before, report, stop))
@@ -551,8 +564,7 @@ async def run(args):
             report["source_audio_sha256"] = {"pc": pc_source_hash, "remote": inspected["source_sha256"]}
             report["pc"] = numeric_metrics(pc_metrics)
             report["remote"] = remote_result["metrics"]
-            thresholds = SimpleNamespace(max_processed_lag_seconds=2, max_lag_growth_seconds=0.5,
-                                         max_fixed_gap_seconds=30)
+            thresholds = SimpleNamespace(**report["pc_performance_thresholds"])
             report["pc_performance"] = helper.performance_evidence(pc_metrics, thresholds)
             remote_metrics = remote_result["metrics"]
             expected = args.seconds * SAMPLE_RATE
@@ -574,11 +586,13 @@ async def run(args):
                 "remote_real_clock": args.seconds * 1000 <= remote_metrics.get("elapsed_ms", 0)
                     <= (args.seconds + 90) * 1000,
                 "remote_buffer_bounded": 0 <= remote_metrics.get("max_buffered_samples", -1) <= 32000,
-                "remote_observed_lag_bounded": 0 <= remote_metrics.get("max_observed_lag_samples", -1) <= 32000,
+                "remote_observed_lag_bounded": 0 <= remote_metrics.get("max_observed_lag_samples", -1)
+                    <= report["remote_progress_thresholds"]["max_observed_lag_samples"],
                 "approximately_full_dual_overlap": report.get("overlap", {}).get("observed_active_overlap_seconds", 0)
                     >= args.seconds - 2,
                 "model_and_worker_preserved": after.get("model_loaded") is True and all(
-                    after.get(key) == before[key] for key in ("server_instance_id", "model_generation", "worker_pid")),
+                    after.get(key) == before.get(key)
+                    for key in ("server_instance_id", "model_generation", "worker_pid", "mode", "model_id")),
             }
             report["passed"] = all(report["checks"].values())
     except BaseException as error:
@@ -617,6 +631,11 @@ if __name__ == "__main__":
     parser.add_argument("--pc-audio", type=Path, required=True, help="Chinese 16kHz mono PCM16 WAV")
     parser.add_argument("--remote-pcm", required=True, help="English raw PCM16LE/16kHz/mono file on e15l")
     parser.add_argument("--remote-keyword", default=REMOTE_KEYWORD)
+    parser.add_argument("--expected-mode", help="Optional assertion for the server's current mode; does not select a model")
+    parser.add_argument("--max-processed-lag-seconds", type=float, default=2,
+        help="PC processed-lag threshold; set explicitly for the model under test (default: 2)")
+    parser.add_argument("--max-observed-lag-samples", type=int, default=32000,
+        help="Remote sent-minus-processed threshold; distinct from the unsent buffer (default: 32000)")
     parser.add_argument("--seconds", type=int, default=600)
     parser.add_argument("--output", type=Path, required=True)
     arguments = parser.parse_args()
@@ -624,6 +643,10 @@ if __name__ == "__main__":
         parser.error("seconds must be between 600 and 3580")
     if not arguments.remote_keyword.strip():
         parser.error("remote keyword must not be empty")
+    if not math.isfinite(arguments.max_processed_lag_seconds) or arguments.max_processed_lag_seconds <= 0:
+        parser.error("max processed lag must be finite and positive")
+    if arguments.max_observed_lag_samples <= 0:
+        parser.error("max observed lag samples must be positive")
     result = asyncio.run(run(arguments))
     save_report(arguments.output, result)
     print(json.dumps({"passed": result["passed"], "output": str(arguments.output),
