@@ -2,6 +2,8 @@
 
 连接 OneAxe Voice 服务器的轻量 Linux 客户端。录音在本机，模型推理在服务器。默认快捷键 **F9**；原有本机服务的 **F8** 保留。
 
+源码目录为 `~/work/touzi/OneAxe/oneaxe-voice/clients/linux`，与同一总目录下 `server/` 的服务端是两个独立 Git 仓库。目录约定及共享模型位置见 [项目总入口](../../README.md)，协议与模型控制边界见 [服务端 README](../../server/README.md)。历史验证记录中的旧路径保留为当时的安装位置。
+
 - [使用与鉴权](docs/usage.md)
 - [实现边界](docs/design.md)
 - [验证记录](docs/validation.md)
@@ -17,6 +19,7 @@
 需要 Rust 1.89+、GTK3 / D-Bus 开发包，以及 `parec`、`pactl`、`xdotool`、`xclip`、`xprop`（`x11-utils`）。构建依赖由 Cargo.lock 固定。
 
 ```bash
+cd ~/work/touzi/OneAxe/oneaxe-voice/clients/linux
 cargo build --release --locked
 ./scripts/install-user
 oneaxe-voice-linux --show

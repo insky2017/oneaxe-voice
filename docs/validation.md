@@ -68,3 +68,10 @@
 - 可随代码审阅的精简证据见 [验收数据](evidence/acceptance-2026-10-03.json)。[重复输入调查](duplicate-input-investigation.md) 明确列出目标延迟读取的已复现风险及尚未完成的修复。
 
 物理麦克风测试、受控音频识别、桌面自动输入、协议逻辑测试分别证明不同环节。此前首版已验收 GNOME X11、Tailnet、R2T2、1 PC + 1 远端；此次 Qwen 统一 V1 改动待真实复验。公网、Wayland 自动输入和多远端未实现。
+# 2026-10-04 目录迁移复验
+
+本机与 e15l 源码 / 构建副本均整理到 `~/work/touzi/OneAxe/oneaxe-voice/clients/linux`；本机保留独立 Git，e15l 保持原无 `.git` 的构建副本身份。服务端位于同级 `server/`，原安装程序、密钥环、配置、F9 与图标继续从 XDG 用户目录使用，无须重装。
+
+两机安装 binary SHA-256 保持 `67fdeb2fd7b7ff222521d501f12cfc59e241d91e0953a148b0958db4bf1047fc`。两端安装版 HTTPS 鉴权 / capabilities 均通过，返回 Qwen 流式已就绪。正式服务与 e15l 安装版完成本机 50 秒 + 远端 30 秒真实双路验证：样本全部处理，关键词与通道隔离检查通过。仅作目录迁移冒烟验证，没有重跑 600 秒容量、麦克风 / 自动粘贴或 Android 真机验收。
+
+目录、环境重定位与完整数值见 [服务端迁移记录](../../../server/docs/directory-migration-2026-10-04.md) 与 [证据](../../../server/docs/evidence/directory-migration-2026-10-04.json)。以下历史记录保留当时的路径与验收范围。

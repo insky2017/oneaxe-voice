@@ -64,8 +64,8 @@ Chromium 每组的 `Ctrl+V`、`paste`、`beforeinput`、`input` 数量均为 23�
 隔离诊断脚本和发行版 Xvfb 解包均位于 Git 忽略的 `runtime/duplicate-audit-x11/`。脚本总是创建新的独立 DISPLAY；`agent-browser` 仅连接脚本创建的临时 Chromium，临时进程与正文在退出时清理。脚本仍使用用户提供的临时黄金文字，未移入正式测试目录。
 
 ```bash
-dbus-run-session -- /home/sky/tools/oneaxe-voice/.venv/bin/python /home/sky/tools/oneaxe-voice-linux/runtime/duplicate-audit-x11/replay_x11.py
-dbus-run-session -- /home/sky/tools/oneaxe-voice/.venv/bin/python /home/sky/tools/oneaxe-voice-linux/runtime/duplicate-audit-x11/replay_x11.py --short-blocks
+dbus-run-session -- "$HOME/work/touzi/OneAxe/oneaxe-voice/server"/.venv/bin/python "$HOME/work/touzi/OneAxe/oneaxe-voice/clients/linux"/runtime/duplicate-audit-x11/replay_x11.py
+dbus-run-session -- "$HOME/work/touzi/OneAxe/oneaxe-voice/server"/.venv/bin/python "$HOME/work/touzi/OneAxe/oneaxe-voice/clients/linux"/runtime/duplicate-audit-x11/replay_x11.py --short-blocks
 ```
 
 报告：`runtime/duplicate-audit-x11/result.json`、`runtime/duplicate-audit-x11/short-result.json`。这些脚本是诊断资产，尚不是经过发布审核的通用测试入口。
