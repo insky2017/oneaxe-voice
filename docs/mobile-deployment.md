@@ -61,7 +61,9 @@ systemctl --user restart oneaxe-voice.service
 
 ## 可运行的服务端验收
 
-仅在私有测试 API 和专门测试设备凭据上运行。以下脚本不会启动或重载模型，但要求 PC 事先把 R2T2 预热好。WAV 是两段内容不同的受控测试音频，不能使用用户私人听写录音。每路关键词必须在自身音频里出现而不在另一条音频里出现。
+Qwen / R2T2 的现行统一验证入口是 `tests/e2e_unified_stream.py`；它查询当前模型，不替客户端选择模型。脚本参数、官方适配依据与本轮证据见 [统一流式接口](unified-stream-2026-10-03.md)。Qwen 验证显式使用 `--max-processed-lag-seconds 2.5`，保留末段积压增长不超过 0.5 秒；客户端从 capabilities 获取 34560 样本默认窗口，不套用 R2T2 的固定数值。管理验证另需 `--allow-model-management`，且只允许独立 loopback 测试端口。
+
+以下保留 R2T2 基线命令。仅在私有测试 API 和专门测试设备凭据上运行；脚本不会启动或重载模型，但要求 PC 事先把 R2T2 预热好。WAV 是两段内容不同的受控测试音频，不能使用用户私人听写录音。每路关键词必须在自身音频里出现而不在另一条音频里出现。
 
 ```bash
 .venv/bin/python tests/e2e_concurrent.py \

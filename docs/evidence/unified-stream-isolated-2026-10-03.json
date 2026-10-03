@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "isolated_validation_passed_production_pending",
+  "status": "isolated_validation_passed",
   "tests": {
     "qwen-unified-isolated": {
       "schema_version": 1,
@@ -2558,6 +2558,360 @@
         },
         "session_max_seconds": 3600
       }
+    },
+    "r2t2-unified-regression": {
+      "schema_version": 1,
+      "passed": true,
+      "scenarios": [
+        {
+          "scenario": "dual",
+          "sessions": [
+            {
+              "role": "pc",
+              "ending": "finish",
+              "session_id": "e17daa02-4ed2-4785-85ba-41000b3f9b0b",
+              "server_instance_id": "41f10e91f0114f6cae7bb208f2c8f17a",
+              "model_generation": "ed3260cf55784af79f4579c404f03eca",
+              "capture_seconds": 35.0,
+              "captured_samples": 560000,
+              "sent_samples": 560000,
+              "received_samples": 560000,
+              "processed_samples": 560000,
+              "sent_pcm_sha256": "d77ec93823fe160025d0b781bf48bdcdcaafe5c62b1a06d46c80cf4fc98b60c3",
+              "transcript_sha256": "01726ebec449f037a2b6d1ccb4ed308f16e4704fdfeba321575cbe1e78961d6d",
+              "characters": 76,
+              "events": 664,
+              "last_sequence": 665,
+              "fixed_updates_seconds": [
+                4.119738,
+                4.43986,
+                4.917624,
+                5.413367,
+                5.570731,
+                5.708581,
+                6.198245,
+                7.32932,
+                7.486941,
+                7.973186,
+                8.443475,
+                8.92277,
+                9.112518,
+                10.220646,
+                13.76807,
+                14.236465,
+                14.558684,
+                15.038047,
+                15.18203,
+                15.511611,
+                15.652547,
+                16.13731,
+                17.239604,
+                17.568252,
+                17.887679,
+                18.353325,
+                18.844653,
+                18.994853,
+                20.242635,
+                24.124488,
+                24.452265,
+                24.925557,
+                25.400049,
+                25.57932,
+                25.746591,
+                26.220194,
+                27.346002,
+                27.514184,
+                28.004463,
+                28.471733,
+                28.965646,
+                29.100961,
+                30.230457,
+                33.72729,
+                34.245035,
+                34.52009,
+                35.012387,
+                35.144693
+              ],
+              "max_buffered_samples": 2560,
+              "credit_waits": 0,
+              "ignored_late_text_events": 0,
+              "processed_lag_seconds": {
+                "p50": 0.16,
+                "p95": 0.16,
+                "p99": 0.16
+              },
+              "late_minus_early_p95_seconds": 0.0,
+              "max_fixed_gap_seconds": 4.119738,
+              "producer_schedule_lag_seconds": {
+                "p50": 0.0008,
+                "p95": 0.0016,
+                "p99": 0.0021
+              },
+              "flushes": [
+                {
+                  "after_audio_samples": 320000,
+                  "sent_at_seconds": 20.0026,
+                  "processed_barrier_reached": true
+                }
+              ],
+              "terminal": {
+                "type": "final",
+                "reason": "finished",
+                "complete": true
+              },
+              "close_code": 1000,
+              "performance_checks": {
+                "client_buffer_bounded": true,
+                "processed_lag_bounded": true,
+                "lag_growth_bounded": true,
+                "capture_clock_bounded": true,
+                "live_text_early": true,
+                "live_text_late": true,
+                "fixed_gap_bounded": true
+              },
+              "keyword_checks": {
+                "required": [
+                  {
+                    "sha256": "ef90eea384e66e13457b3eda54b40e5f7603cf0faf367db57735b89ab7775909",
+                    "matched": true
+                  }
+                ],
+                "foreign": [
+                  {
+                    "sha256": "d524c1a0811da49592f841085cc0063eb62b3001252a94542795d1ca9824a941",
+                    "matched": false
+                  }
+                ],
+                "passed": true
+              },
+              "passed": true
+            },
+            {
+              "role": "mobile",
+              "ending": "finish",
+              "session_id": "e48c1725-e2b9-4357-af09-a50bb092d78e",
+              "server_instance_id": "41f10e91f0114f6cae7bb208f2c8f17a",
+              "model_generation": "ed3260cf55784af79f4579c404f03eca",
+              "capture_seconds": 35.0,
+              "captured_samples": 560000,
+              "sent_samples": 560000,
+              "received_samples": 560000,
+              "processed_samples": 560000,
+              "sent_pcm_sha256": "564f79ee7c72a77c20542a8bad0ae60ccb014b8cff53ac45e3ed48c70dd9080a",
+              "transcript_sha256": "550453b98aed2550b4fca35d0e827f906f77dd4902528c471d90d3a9c808d500",
+              "characters": 557,
+              "events": 661,
+              "last_sequence": 662,
+              "fixed_updates_seconds": [
+                0.818455,
+                0.930243,
+                1.067967,
+                1.403145,
+                2.056327,
+                2.366549,
+                2.845602,
+                3.177178,
+                3.651757,
+                4.123843,
+                4.444091,
+                4.774102,
+                5.261422,
+                5.417726,
+                5.713395,
+                5.907847,
+                6.04268,
+                6.367581,
+                6.677069,
+                7.181816,
+                7.653852,
+                8.125476,
+                8.447969,
+                8.926039,
+                9.636159,
+                9.910572,
+                10.224969,
+                10.408702,
+                10.70673,
+                11.03968,
+                11.508831,
+                11.844165,
+                12.33819,
+                12.639073,
+                13.118917,
+                13.43058,
+                13.917251,
+                14.069137,
+                14.390001,
+                15.188345,
+                15.517108,
+                15.657848,
+                15.827486,
+                16.143158,
+                16.458324,
+                17.244442,
+                17.573881,
+                17.891598,
+                18.358748,
+                19.168207,
+                19.34152,
+                19.648964,
+                19.812612,
+                20.140261,
+                20.248148,
+                21.242195,
+                21.733378,
+                22.199036,
+                22.527658,
+                23.164815,
+                23.32817,
+                23.64947,
+                24.128707,
+                24.759122,
+                24.930198,
+                25.091034,
+                25.2522,
+                25.583155,
+                25.75069,
+                26.715472,
+                27.192053,
+                27.517942,
+                28.006144,
+                28.634288,
+                28.968533,
+                29.269636,
+                29.465011,
+                29.613876,
+                29.913336,
+                30.087165,
+                30.874511,
+                31.045516,
+                31.659124,
+                31.97746,
+                32.448677,
+                32.936362,
+                33.260351,
+                33.413629,
+                34.268041,
+                34.372881,
+                34.696215,
+                34.868734,
+                35.150383
+              ],
+              "max_buffered_samples": 2560,
+              "credit_waits": 0,
+              "ignored_late_text_events": 0,
+              "processed_lag_seconds": {
+                "p50": 0.16,
+                "p95": 0.16,
+                "p99": 0.32
+              },
+              "late_minus_early_p95_seconds": 0.0,
+              "max_fixed_gap_seconds": 0.994047,
+              "producer_schedule_lag_seconds": {
+                "p50": 0.0008,
+                "p95": 0.0016,
+                "p99": 0.0021
+              },
+              "flushes": [
+                {
+                  "after_audio_samples": 320000,
+                  "sent_at_seconds": 20.004143,
+                  "processed_barrier_reached": true
+                }
+              ],
+              "terminal": {
+                "type": "final",
+                "reason": "finished",
+                "complete": true
+              },
+              "close_code": 1000,
+              "performance_checks": {
+                "client_buffer_bounded": true,
+                "processed_lag_bounded": true,
+                "lag_growth_bounded": true,
+                "capture_clock_bounded": true,
+                "live_text_early": true,
+                "live_text_late": true,
+                "fixed_gap_bounded": true
+              },
+              "keyword_checks": {
+                "required": [
+                  {
+                    "sha256": "d524c1a0811da49592f841085cc0063eb62b3001252a94542795d1ca9824a941",
+                    "matched": true
+                  }
+                ],
+                "foreign": [
+                  {
+                    "sha256": "ef90eea384e66e13457b3eda54b40e5f7603cf0faf367db57735b89ab7775909",
+                    "matched": false
+                  }
+                ],
+                "passed": true
+              },
+              "passed": true
+            }
+          ],
+          "isolation": null,
+          "model_preserved": true,
+          "second_mobile_rejected": {
+            "error_code": "CAPACITY_EXCEEDED",
+            "close_code": 1013
+          },
+          "distinct_transcripts": true,
+          "passed": true
+        }
+      ],
+      "model_management_calls": 0,
+      "service_management_calls": 0,
+      "scope": "real-service-protocol-fixture; microphone/UI/cross-network evidence is separate",
+      "source_audio": {
+        "pc": {
+          "sha256": "d2568087659128ce6e5ceee18d2f17e6072b52e4124179540a9721ff3b1770b8",
+          "samples": 160000,
+          "seconds": 10.0
+        },
+        "mobile": {
+          "sha256": "7aaa9ab5b8fd9a466cf75d4f3c733a48c9b160e81c6105fbf28d6181fe5ec9af",
+          "samples": 151780,
+          "seconds": 9.48625
+        }
+      },
+      "model": {
+        "mode": "r2t2",
+        "server_instance_id": "41f10e91f0114f6cae7bb208f2c8f17a",
+        "model_generation": "ed3260cf55784af79f4579c404f03eca",
+        "worker_pid": 3447186
+      },
+      "capabilities": {
+        "protocol_version": 1,
+        "server_instance_id": "41f10e91f0114f6cae7bb208f2c8f17a",
+        "model_generation": "ed3260cf55784af79f4579c404f03eca",
+        "mode": "r2t2",
+        "model_state": "ready",
+        "ready": true,
+        "stream_supported": true,
+        "can_start": true,
+        "max_sessions": 2,
+        "mobile_slots_available": 1,
+        "audio": {
+          "encoding": "pcm_s16le",
+          "sample_rate": 16000,
+          "channels": 1,
+          "max_frame_bytes": 5120
+        },
+        "flow": {
+          "window_samples": 32000,
+          "client_buffer_max_ms": 2000
+        },
+        "session_max_seconds": 3600
+      }
     }
+  },
+  "additional_observation": {
+    "scenario": "deliberately_slow_mobile_reader_100ms_per_event",
+    "result": "CAPTURE_BUFFER_EXCEEDED",
+    "expected_behavior": "bounded buffer stops the test session instead of silently dropping audio",
+    "normal_reader_regression_passed": true
   }
 }

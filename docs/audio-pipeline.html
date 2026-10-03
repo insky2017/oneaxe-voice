@@ -17,7 +17,7 @@
 <main>
 <header>
   <div><div class="eyebrow">ONEAXE VOICE / AUDIO PIPELINE</div><h1>一句话，怎样变成文字</h1><p class="intro">沿音频流看模块、等待与计算，再看文字如何到达输入框。</p></div>
-  <div class="snapshot">2026-10-03 · Qwen V1 / 双路更新<br>新增能力验证中；保留旧计时证据<a href="architecture-map.html">完整架构图 ↗</a></div>
+  <div class="snapshot">2026-10-03 · Qwen V1 / 双路更新<br>新增能力服务端与 Linux 已验证；保留旧计时证据<a href="architecture-map.html">完整架构图 ↗</a></div>
 </header>
 <div class="controls">
   <div class="switch" role="group" aria-label="选择要查看的流式模式">
@@ -26,7 +26,7 @@
   </div>
   <div class="legend" aria-label="数字类型"><span class="policy">配置 / 音频时长</span><span class="measured">已有实测</span><span class="unknown">未单独计时</span></div>
 </div>
-<p class="mode-note" id="mode-note" aria-live="polite">本轮更新 / 验证中 · 1 PC + 1 远端共享 Qwen AsyncLLM，各会话独立；F8 保留旧 WS，远端统一移动 V1。</p>
+<p class="mode-note" id="mode-note" aria-live="polite">本轮更新 / 服务端与 Linux 已验证 · 1 PC + 1 远端共享 Qwen AsyncLLM，各会话独立；F8 保留旧 WS，远端统一移动 V1。</p>
 <p class="boundary">两种流式均经 concurrent_worker，共享所选模型的一份权重和 AsyncLLM。远端按 capabilities 加入已就绪模型，不按模型切换接口、不传 mode；本机 V1 接受两种模式且必须传 mode。V1 从 capabilities、实际 ready / flow 读取额度：R2T2 默认 32000 样本，Qwen 默认 34560，按配置与最大帧动态计算；vad 不支持远端。</p>
 <noscript>当前展示 Qwen 流式。启用 JavaScript 后可切换 R2T2；下方证据链接始终可用。</noscript>
 
@@ -73,7 +73,7 @@
   <summary>查看计时边界、源码与证据</summary>
   <div class="evidence">
     <div><h3>读图边界</h3><ul>
-      <li>本图按本轮源码更新流程，Qwen V1 / 双路能力验证中；以下数值全部保留旧版证据。已预热，不含模型冷启动，不能作为新 Qwen 双路的延迟结论。</li>
+      <li>本图按本轮源码更新流程，Qwen V1 / 双路能力服务端与 Linux 已验证；以下数值全部保留旧版证据。已预热，不含模型冷启动，不能作为新 Qwen 双路的延迟结论。</li>
       <li>旧 Qwen 单路：2026-10-03 原 stream_worker 正式回归，单路 120 秒；worker 步骤 p95 227.7805 ms，首固定 8.125195 秒，finish 0.0962 秒。</li>
       <li>旧 R2T2 双路：同日两路各 120 秒正式回归，展示 PC 中文一路；worker 回复步骤 p95 125.975 ms，首固定 4.0658 秒，finish 0.2192 秒。</li>
       <li>两份测试的并发量、输入节奏与统计范围不同，不据此计算两种模式的速度倍率。Qwen 取触发识别的音频步骤；R2T2 取报告中的各回复步骤，包含收尾。</li>
@@ -91,13 +91,13 @@
   </div>
   <div class="source-links"><a href="qwen-passive-release-2026-10-03.md">旧 Qwen 单路发布与验证</a><a href="evidence/qwen-passive-release-2026-10-03.json">旧 Qwen 单路数值证据</a><a href="r2t2-passive-release-2026-10-03.md">R2T2 发布与验证</a><a href="evidence/r2t2-passive-release-2026-10-03.json">R2T2 数值证据</a><a href="../oneaxe_voice/qwen_async.py">Qwen 异步适配源码</a><a href="../oneaxe_voice/concurrent_worker.py">共享 worker 源码</a><a href="../oneaxe_voice/r2t2_async.py">R2T2 worker 源码</a><a href="../oneaxe_voice/desktop.py">桌面流程源码</a></div>
 </details>
-<footer><span>Qwen V1 / 双路为本轮更新，验证中；计时保留旧版证据。配置展示源码默认值，用户设置可能覆盖。</span><span>离线可用 · 非实时监控</span></footer>
+<footer><span>Qwen V1 / 双路为本轮更新，服务端与 Linux 已验证；计时保留旧版证据。配置展示源码默认值，用户设置可能覆盖。</span><span>离线可用 · 非实时监控</span></footer>
 </main>
 <script>
 'use strict';
 const modes = {
   qwen: {
-    note:'本轮更新 / 验证中 · 1 PC + 1 远端共享 Qwen AsyncLLM，各会话独立；F8 保留旧 WS，远端统一移动 V1。',
+    note:'本轮更新 / 服务端与 Linux 已验证 · 1 PC + 1 远端共享 Qwen AsyncLLM，各会话独立；F8 保留旧 WS，远端统一移动 V1。',
     transport:'Qwen F8 逐包发送并等待回复；采集任务仍继续录音。远端按 capabilities 使用统一 V1，本机 V1 也接受 Qwen。',
     window:'累积音频与历史文字；Qwen 到 30 秒完成窗口收尾并重建状态。',
     chunk:'每 2 秒音频一次',
