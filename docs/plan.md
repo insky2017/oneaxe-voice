@@ -1,6 +1,12 @@
 # 实施计划
 
-- [x] 确认名称 OneAxe Voice；默认目录为 `~/tools/oneaxe-voice`。
+## 当前目录约定
+
+总目录为 `~/work/touzi/OneAxe/oneaxe-voice`；服务端独立仓库在 `server/`，Linux 客户端独立仓库在 `clients/linux/`，容量研究 worktree 只保留 `.worktrees/server/capacity`。共享模型仍读取 `~/tools/models`。目录与文档入口见 [项目总入口](../../README.md)，客户端见 [Linux README](../../clients/linux/README.md)。本页阶段完成项与历史验证记录不构成本轮目录迁移的运行验收。
+
+## 第一阶段
+
+- [x] 确认名称 OneAxe Voice；初始目录为 `~/tools/oneaxe-voice`，现行目录约定见上文。
 - [x] 确认独立服务方案，复用权重文件，分别加载模型实例。
 - [x] 建立独立运行环境和代码仓库。
 - [x] 实现本机短 WAV 接口、访问令牌、输入限制和命令行客户端。
@@ -66,7 +72,7 @@
 - [x] 最终 GPU 长测、取消/生命周期及独立 X11 验证。
 - [x] 合入与本机部署、Pocket 接口交接。
 
-容量首版固定 1 PC + 1 手机；Qwen 两种模式明确不支持移动端。
+该阶段首版容量固定 1 PC + 1 手机，当时 Qwen 两种模式不支持移动端。后续已扩展统一远端流式接口：Qwen 流式与 R2T2 均支持 1 PC + 1 远端，Android 与 Linux 共用远端名额，按 capabilities 使用 PC 已就绪模型，无模型选择或管理权限；稳听 `vad` 仍不支持远端。实现与验收范围见 [统一远端流式接口](unified-stream-2026-10-03.md)。
 
 ## 多路容量研究（2026-10-02）
 

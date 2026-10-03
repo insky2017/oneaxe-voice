@@ -8,10 +8,10 @@ V1 发送额度取实际 `ready` / `flow` 的 `audio_send_limit`；能力查询�
 
 ## 当前运行方式
 
-以下命令以仓库位于 `~/tools/oneaxe-voice` 为例；仓库可以放在其他目录，包括带空格的路径。服务监听地址为 `http://127.0.0.1:8097`。文中的已运行状态和性能测量来自旧机器，仅作历史记录。
+以下命令使用服务端目录 `~/work/touzi/OneAxe/oneaxe-voice/server`；仓库也可安装到其他目录，包括带空格的路径。独立 Linux 客户端在同一总目录下的 `clients/linux/`，见 [项目总入口](../../README.md) 与 [Linux 客户端](../../clients/linux/README.md)。服务监听地址为 `http://127.0.0.1:8097`。文中的已运行状态、性能测量及历史环境重建示例保留当时路径，仅作历史记录。
 
 ```bash
-cd ~/tools/oneaxe-voice
+cd ~/work/touzi/OneAxe/oneaxe-voice/server
 ./bin/oneaxe-voice health
 ./bin/oneaxe-voice status
 ./bin/oneaxe-voice transcribe /absolute/path/recording.wav

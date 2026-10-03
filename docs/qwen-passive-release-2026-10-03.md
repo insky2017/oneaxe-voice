@@ -72,7 +72,7 @@ OMP_NUM_THREADS=1 CUDA_VISIBLE_DEVICES='' \
 .venv/bin/python -m tests.run_qwen_wait_profile \
   --label new-qwen-passive --policy passive \
   --audio /path/to/test.wav \
-  --live-runtime "$HOME/tools/oneaxe-voice/runtime" --check-cancel
+  --live-runtime "$HOME/work/touzi/OneAxe/oneaxe-voice/server/runtime" --check-cancel
 ```
 
 runner 只读取正式录音状态，测试服务使用独立本机端口 `18099`。正式听写恢复时，会中止并清理实验。`--policy` 用于核对源码实际启用的策略，不是强制覆盖开关；原配置基线需要使用优化前的 Worker 启动代码及相同测试脚本。不要在正式目录回退代码来做基线。

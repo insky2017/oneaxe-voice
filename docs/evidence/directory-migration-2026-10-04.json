@@ -1,0 +1,228 @@
+{
+  "date": "2026-10-04",
+  "scope": "directory migration; API and model algorithms unchanged",
+  "workspace": "/home/sky/work/touzi/OneAxe/oneaxe-voice",
+  "server_branch": "master",
+  "linux_branch": "main",
+  "independent_git_roots_verified": true,
+  "capacity_unique_commits_preserved": 5,
+  "parent_git_exclusion_verified": true,
+  "old_tools_directories_absent": true,
+  "credential_and_certificate_bytes_preserved": true,
+  "vplus_pid_unchanged": true,
+  "shared_models_moved": false,
+  "environments": {
+    ".venv": {
+      "conda_pack_version": "0.9.2",
+      "source_and_cache_after_equal": true,
+      "independent_inodes": {
+        "regular_files_checked": 74754,
+        "shared_source_or_cache_inodes": 0
+      },
+      "temporary_archive_removed": true,
+      "final_prefix": "/home/sky/work/touzi/OneAxe/oneaxe-voice/server/.venv",
+      "python_prefix_verified": true,
+      "pip_executable_verified": true,
+      "openssl_default_ca_relocated": true,
+      "cuda_available": true,
+      "tls_verified_unauthenticated_status": 401
+    },
+    ".venv-stream": {
+      "conda_pack_version": "0.9.2",
+      "source_and_cache_after_equal": true,
+      "independent_inodes": {
+        "regular_files_checked": 73586,
+        "shared_source_or_cache_inodes": 0
+      },
+      "temporary_archive_removed": true,
+      "final_prefix": "/home/sky/work/touzi/OneAxe/oneaxe-voice/server/.venv-stream",
+      "python_prefix_verified": true,
+      "pip_executable_verified": true,
+      "openssl_default_ca_relocated": true,
+      "cuda_available": true,
+      "tls_verified_unauthenticated_status": 401
+    }
+  },
+  "redundant_environment_backups_removed": true,
+  "installed_client_sha256": "67fdeb2fd7b7ff222521d501f12cfc59e241d91e0953a148b0958db4bf1047fc",
+  "local_and_e15l_authenticated_capabilities": {
+    "passed": true,
+    "mode": "qwen-stream",
+    "ready": true,
+    "can_start": true
+  },
+  "unit_regression": {
+    "passed": true,
+    "tests": 214,
+    "elapsed_seconds": 10.22,
+    "command": "OMP_NUM_THREADS=1 CUDA_VISIBLE_DEVICES='' .venv/bin/python -m unittest discover -s tests -q"
+  },
+  "dual_stream": {
+    "passed": true,
+    "requested_dual_seconds": 30,
+    "pc_capture_seconds": 50,
+    "remote_capture_seconds": 30,
+    "overlap_tolerance_seconds": 2,
+    "pc_performance_thresholds": {
+      "max_processed_lag_seconds": 2.5,
+      "max_lag_growth_seconds": 0.5,
+      "max_fixed_gap_seconds": 30
+    },
+    "remote_progress_thresholds": {
+      "max_observed_lag_samples": 34560,
+      "max_buffered_samples": 32000
+    },
+    "unverified_remote_metrics": [
+      "early_late_lag_growth",
+      "last_fixed_text_time",
+      "max_fixed_text_gap",
+      "transcript_sha256"
+    ],
+    "microphone_and_gui_acceptance_included": false,
+    "remote_expected_keyword_sha256": "d524c1a0811da49592f841085cc0063eb62b3001252a94542795d1ca9824a941",
+    "helper_source_sha256": "7950460021dddfa7f0a003fb3b2688b0f6722aced534d72d8e9679ba2f4dda9e",
+    "source_audio_sha256": {
+      "pc": "d2568087659128ce6e5ceee18d2f17e6072b52e4124179540a9721ff3b1770b8",
+      "remote": "6f049a3677becbb503c0253a951ed75ef57ca941dd49b84b77b22826d775ec72"
+    },
+    "model_mode": "qwen-stream",
+    "remote_capabilities_gate": "installed_Rust_client_before_audio",
+    "session_id_sha256": {
+      "pc": "4dd9df5ada6dda6e6a8ad8218a9aa62703503af2bfb220357b5bfb1d4ede71cb",
+      "mobile": "08c39e9e8591a4c0913d46f07bad3b6affe25f35c5dadcd4d1755b6059d7c9b0"
+    },
+    "overlap": {
+      "sample_interval_seconds": 0.5,
+      "dual_active_samples": 60,
+      "observed_active_overlap_seconds": 29.9463,
+      "first_dual_active_seconds": 3.1057
+    },
+    "pc": {
+      "frames": 313,
+      "max_queue": 1,
+      "credit_waits": 3,
+      "updates": 19,
+      "max_buffered_samples": 5120,
+      "capture_stop_lag_seconds": 2.0,
+      "processed_at_capture_stop_samples": 768000,
+      "stop_at_seconds": 50.00221534099546,
+      "final_at_seconds": 50.26547719500377,
+      "complete": true,
+      "sent_samples": 800000,
+      "expected_samples": 800000,
+      "processed_samples": 800000,
+      "received_samples": 800000,
+      "capture_seconds": 50,
+      "cancel_requested": false,
+      "processed_live_ratio": 0.96,
+      "first_fixed_seconds": 8.132,
+      "characters": 115,
+      "fixed_updates_seconds": [
+        8.132,
+        10.214,
+        12.135,
+        14.216,
+        16.166,
+        18.221,
+        20.144,
+        24.151,
+        26.242,
+        28.142,
+        30.401,
+        38.212,
+        40.115,
+        42.191,
+        44.115,
+        46.27,
+        48.14,
+        50.145,
+        50.265
+      ],
+      "processed_lag_seconds": {
+        "p50": 1.1671,
+        "p95": 2.0814,
+        "p99": 2.1566
+      },
+      "lag_early": {
+        "p50": 1.1227,
+        "p95": 2.0405,
+        "p99": 2.1098
+      },
+      "lag_late": {
+        "p50": 1.2283,
+        "p95": 2.0578,
+        "p99": 2.1292
+      },
+      "inference_ms": {
+        "p50": 0.094,
+        "p95": 119.983,
+        "p99": 144.378
+      },
+      "finish_latency_seconds": 0.2633,
+      "max_fixed_interval_seconds": 8.132,
+      "transcript_sha256": "8c3be3278d56aa6591438462557dcabb841edbdac27573b6c26bb56f82790317",
+      "session_id_sha256": "4dd9df5ada6dda6e6a8ad8218a9aa62703503af2bfb220357b5bfb1d4ede71cb",
+      "final_reason_finished": true
+    },
+    "remote": {
+      "complete": true,
+      "elapsed_ms": 31264,
+      "fixed_characters": 492,
+      "fixed_updates": 14,
+      "first_fixed_ms": 5218,
+      "sent_samples": 480000,
+      "processed_samples": 480000,
+      "max_buffered_samples": 5120,
+      "max_observed_lag_samples": 34560,
+      "expected_keyword_checked": true,
+      "foreign_keyword_checked": true
+    },
+    "pc_performance": {
+      "passed": true,
+      "checks": {
+        "processed_lag_p95": true,
+        "late_lag_growth": true,
+        "capture_stop_lag": true,
+        "live_text_early": true,
+        "live_text_late": true,
+        "fixed_text_gap": true,
+        "all_audio_sent": true,
+        "final_processed_all_audio": true,
+        "complete_final": true
+      },
+      "late_minus_early_p95_seconds": 0.0173
+    },
+    "checks": {
+      "pc_performance": true,
+      "pc_chinese_present": true,
+      "pc_expected_keyword": true,
+      "pc_foreign_keyword_absent": true,
+      "pc_observed_session_matches": true,
+      "remote_keyword_checks": true,
+      "remote_all_audio_processed": true,
+      "remote_complete": true,
+      "remote_live_text": true,
+      "remote_real_clock": true,
+      "remote_buffer_bounded": true,
+      "remote_observed_lag_bounded": true,
+      "approximately_full_dual_overlap": true,
+      "model_and_worker_preserved": true
+    },
+    "session_outcomes": {
+      "pc": {
+        "status": "completed"
+      },
+      "remote": {
+        "status": "completed"
+      }
+    },
+    "validation_scope": "30-second directory migration smoke; not a 600-second endurance or capacity test"
+  },
+  "not_retested": [
+    "R2T2 real inference",
+    "microphone and GUI automatic paste",
+    "Android device",
+    "600-second endurance",
+    "tmux"
+  ]
+}

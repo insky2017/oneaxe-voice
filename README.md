@@ -2,6 +2,12 @@
 
 本机 GPU 听写工具。支持 DJI Mic 录音、F8 全局快捷键、本地 Qwen3-ASR / Confucius4-R2T2 识别及 X11 自动粘贴，也提供短 WAV API 和命令行客户端。
 
+## 目录与入口
+
+项目总目录为 `~/work/touzi/OneAxe/oneaxe-voice`；本服务端仓库位于 `server/`，独立 Linux 客户端仓库位于 `clients/linux/`。两个仓库各自保留 Git 历史；容量研究只保留 `.worktrees/server/capacity`，不作为正式服务目录。共享模型继续从 `~/tools/models` 只读加载。
+
+服务端操作先进入 `~/work/touzi/OneAxe/oneaxe-voice/server`。总目录及 F8 / F9 入口见 [项目总入口](../README.md)，Linux 安装与使用见 [客户端 README](../clients/linux/README.md)。历史验证文档中的旧路径代表当时的部署位置。
+
 ## 桌面听写
 
 连接 DJI Mic，把光标放在输入位置，按 **F8** 开始持续听写。稳听在约 **700 ms** 停顿后识别整段；两种流式模式边说边识别，停顿约 **1 秒** 后自动补齐尚未输入的尾字，麦克风继续录音。再次按 **F8** 停止并收尾；不发送回车。
@@ -44,15 +50,17 @@
 服务地址为 http://127.0.0.1:8097。默认使用本地 Qwen3-ASR-1.7B 和 CUDA。
 仅启动 API 时，模型在预热或识别请求到来后加载，同样遵循保存的生命周期策略。
 
-## PC 与手机并发
+## PC 与远端并发
 
-R2T2 使用一份 GPU 权重和独立会话状态，支持 **1 路 PC + 1 路手机**。手机只能使用 PC 已加载的 R2T2；不能加载、切换或卸载模型。PC 保留模型控制权。手机结束、取消和断线只清理本路，模型继续驻留；两端都空闲后才计算用户已开启的自动卸载时间。
+Qwen 流式（`qwen-stream`）与 R2T2（`r2t2`）均已实现统一远端流式接口，每种模式使用一份 GPU 权重和独立会话状态，支持 **1 路 PC + 1 路远端**。Android 与 Linux 客户端共用远端名额，先查询 `capabilities`，再绑定 PC 已就绪的模型；客户端不传模型选择字段，不能加载、切换、卸载模型或修改策略。PC 保留模型控制权。远端结束、取消和断线只清理本路，模型继续驻留；两端都空闲后才计算用户已开启的自动卸载时间。
 
-移动端通过 Tailnet 的 HTTPS/WSS 和独立设备凭据接入。入口需要单独配置证书，不因安装代码而自动开放。接入开发以 [移动接口 V1](docs/mobile-api-v1.md) 为准，部署与凭据操作见 [移动入口部署](docs/mobile-deployment.md)。Qwen 两种模式暂不提供移动并发。
+远端通过 Tailnet 的 HTTPS/WSS 和独立设备凭据接入，使用同一移动 V1 契约。入口需要单独配置证书，不因安装代码而自动开放。接入开发以 [移动接口 V1](docs/mobile-api-v1.md) 为准，部署与凭据操作见 [移动入口部署](docs/mobile-deployment.md)。稳听分段模式（`vad`）不支持远端流式；服务端能力与各客户端实际验收范围见对应验证记录。
 
 ## 文档
 
-- [Linux 轻量客户端方案（已审核 / 开发中 HTML）](docs/linux-client-proposal.html)：醒目标记本次变更、Rust + GTK3 双机兼容调整、默认可配置 F9（本机 F8 保留）及完整设备鉴权流程；本机与 e15l 安装验证，服务端代码/API 冻结且必要改动须先确认，公网仅规划。
+- [目录整合与迁移验收](docs/directory-migration-2026-10-04.md)
+
+- [Linux 轻量客户端方案（HTML）](docs/linux-client-proposal.html)：Rust + GTK3 双机兼容、默认可配置 F9（本机 F8 保留）、统一 Qwen / R2T2 能力接入、设备鉴权与新部署目录；本机与 e15l 的验证范围及交付风险分别记录，公网仅规划。
 - [音频流水线与耗时（简版 HTML）](docs/audio-pipeline.html)：从麦克风到字幕和输入框；切换 Qwen / R2T2，区分音频等待、处理耗时及未测环节。
 - [交互式架构与流程图（离线 HTML）](docs/architecture-map.html)：总体关系、听写流程、双路并发、模型生命周期、部署依赖及实现状态；点击节点查看职责与源码。
 - [架构与隔离边界](docs/architecture.md)

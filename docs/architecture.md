@@ -2,6 +2,10 @@
 
 先看 [离线架构与流程图](architecture-map.html)，可按总体、听写、并发、生命周期和部署边界展开。
 
+## 目录布局
+
+总目录为 `~/work/touzi/OneAxe/oneaxe-voice`，其中 `server/` 与 `clients/linux/` 是两个独立 Git 仓库；服务端负责本机 F8、模型与 GPU，Linux 客户端提供默认可配置 F9。容量研究 worktree 只保留 `.worktrees/server/capacity`，正式服务从 `server/` 运行。共享权重仍位于 `~/tools/models`。入口见 [项目总览](../../README.md) 与 [Linux 客户端](../../clients/linux/README.md)。历史测量文档中的旧路径保留其原始含义。
+
 第一阶段提供 GPU 短录音 API；第二阶段增加 DJI Mic、F8 和 X11 粘贴；第三阶段在独立桌面控制器中增加 CPU WebRTC VAD、持续采集及串行分段队列。第四阶段加入两种官方流式引擎、独立工作进程及顶栏控制。算法及边界见 [VAD 说明](vad.md) 和 [三模式说明](modes.md)。
 
 流式桌面端持续发送语音 PCM，约 1 秒停顿后在同一队列发送 `flush`，工作进程按官方尾部算法执行推理并重建当前句状态，保留全局文字和热模型。候选、模型固定、已发送/复制三个状态分别保存，字幕不再把候选冒充已输入。停顿后的空闲静音在桌面过滤，WS 通过保活维持整轮租约。
@@ -41,14 +45,14 @@ flowchart LR
 
 | 项目 | OneAxe Voice | VPlus |
 | --- | --- | --- |
-| 代码 | `~/tools/oneaxe-voice` | `~/tools/oneaxe.cn/apps/vplusASRMasterLu` |
+| 代码 | `~/work/touzi/OneAxe/oneaxe-voice/server` | `~/tools/oneaxe.cn/apps/vplusASRMasterLu` |
 | Python 环境 | 本项目 `.venv` / `.venv-stream` | `~/tools/miniconda3/envs/qwen3-asr` |
 | 用户级服务 | `oneaxe-voice.service` | `oneaxe-vplus.service` |
 | HTTP 端口 | `127.0.0.1:8097` | `8092` |
 | 模型实例 | 桌面启动/选择时预热，独立生命周期 | 由既有服务管理 |
 | 模型权重 | 默认读取 `~/tools/models/Qwen3-ASR-1.7B` | 使用既有本地权重 |
 
-上述目录是旧机器的布局记录。新安装默认从当前用户 home 目录解析模型位置；可通过 `ONEAXE_VOICE_MODEL_DIR` 指向其他本地权重目录。
+OneAxe Voice 代码使用上述整合目录；VPlus 及其环境路径为既有部署参考。新安装默认从当前用户 home 目录解析模型位置；可通过 `ONEAXE_VOICE_MODEL_DIR` 指向其他本地权重目录。
 
 本项目不导入 VPlus 代码、不提交 VPlus 任务、不访问其任务数据库，不管理其服务。环境由已有可用环境克隆到独立目录，以避免再次下载依赖；后续依赖操作只针对本项目 `.venv`，不要直接编辑两个环境的包文件。模型通过 `local_files_only=True` 加载，服务设置离线变量，运行无需下载模型或配置外网代理。
 
