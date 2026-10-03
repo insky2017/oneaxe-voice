@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+project_dir="$(cd -- "$(dirname -- "$0")/.." && pwd)"
+binary="${1:-$project_dir/target/release/oneaxe-voice-linux}"
+[[ -x "$binary" ]] || { echo '请先构建 release 可执行文件。' >&2; exit 2; }
+package_dir="$(mktemp -d)"
+trap 'rm -rf -- "$package_dir"' EXIT
+mkdir -p "$package_dir/DEBIAN" "$package_dir/usr/bin" "$package_dir/usr/share/applications" "$package_dir/usr/share/icons/hicolor/scalable/apps" "$package_dir/usr/share/oneaxe-voice-linux/icons" "$project_dir/dist" "$package_dir/usr/share/doc/oneaxe-voice-linux"
+install -m 755 "$binary" "$package_dir/usr/bin/oneaxe-voice-linux"
+install -m 644 "$project_dir/LICENSE" "$package_dir/usr/share/doc/oneaxe-voice-linux/copyright"
+install -m 644 "$project_dir/vendor/webrtc-vad/LICENSE" "$package_dir/usr/share/doc/oneaxe-voice-linux/webrtc-vad-LICENSE"
+install -m 644 "$project_dir/vendor/webrtc-vad/resources/libfvad/LICENSE" "$package_dir/usr/share/doc/oneaxe-voice-linux/libfvad-LICENSE"
+for icon in "$project_dir"/assets/*.svg; do
+  [[ -f "$icon" ]] || continue
+  install -m 644 "$icon" "$package_dir/usr/share/icons/hicolor/scalable/apps/"
+  install -m 644 "$icon" "$package_dir/usr/share/oneaxe-voice-linux/icons/"
+done
+cat > "$package_dir/DEBIAN/control" <<'EOF'
+Package: oneaxe-voice-linux
+Version: 0.1.0
+Architecture: amd64
+Maintainer: OneAxe
+Section: sound
+Priority: optional
+Depends: libc6 (>= 2.31), libgcc-s1, libgtk-3-0 (>= 3.24), libglib2.0-0 (>= 2.64), libdbus-1-3, pulseaudio-utils, xdotool, xclip, x11-utils, ca-certificates
+Recommends: libayatana-appindicator3-1 | libappindicator3-1, gnome-keyring
+Description: OneAxe Voice remote Linux dictation client
+ Rust and GTK client for the existing Tailnet HTTPS/WSS mobile V1 API.
+ No local ASR model or CUDA environment is required.
+EOF
+cat > "$package_dir/usr/share/applications/oneaxe-voice-linux.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=OneAxe Voice Linux
+Comment=远端语音听写客户端
+Exec=oneaxe-voice-linux --show
+Icon=oneaxe-voice-linux
+Terminal=false
+Categories=AudioVideo;Audio;Utility;
+EOF
+dpkg-deb --root-owner-group --build "$package_dir" "$project_dir/dist/oneaxe-voice-linux_0.1.0_amd64.deb"
+echo '安装包不自动写用户快捷键。登录桌面后运行 oneaxe-voice-linux --install-hotkey。'

@@ -1,0 +1,7 @@
+/target/
+/dist/
+/runtime/
+*.token
+*.pcm
+*.wav
+__pycache__/
