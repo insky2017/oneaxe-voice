@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>OneAxe Voice · 音频流水线与耗时</title>
+<style>
+:root{--bg:#f5f5f0;--paper:#fff;--ink:#243831;--muted:#62706a;--line:#dce3db;--green:#226755;--soft:#eaf2eb;--amber:#936019;--amber-bg:#faf0db;--blue:#2e6382;--blue-bg:#eaf2f8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 system-ui,-apple-system,"Noto Sans CJK SC","Microsoft YaHei",sans-serif}main{max-width:1220px;margin:auto;padding:30px 36px 24px}a{color:var(--green);text-underline-offset:3px}button{font:inherit;cursor:pointer}button:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid #a6cabc;outline-offset:4px}h1,h2,h3,p{margin:0}h1{font-size:30px;line-height:1.35;letter-spacing:-.03em}h2{font-size:15px}h3{font-size:16px;line-height:1.4}header{display:flex;justify-content:space-between;gap:24px;align-items:flex-start}.eyebrow{font-size:11px;letter-spacing:.13em;color:var(--green);font-weight:700;margin-bottom:6px}.intro{color:var(--muted);margin-top:8px;font-size:14px}.snapshot{font-size:12px;color:var(--muted);text-align:right;white-space:nowrap;padding-top:5px}.snapshot a{display:block;margin-top:5px}.controls{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:22px 0 12px}.switch{display:inline-flex;padding:4px;background:#e5eae3;border-radius:11px;gap:4px}.switch button{border:0;background:transparent;color:var(--muted);border-radius:8px;padding:8px 18px;font-size:14px;font-weight:600}.switch button[aria-pressed="true"]{background:var(--paper);color:var(--green);box-shadow:0 1px 4px #20342712}.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);flex-wrap:wrap}.legend span:before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}.legend .policy:before{background:#bb862d}.legend .measured:before{background:var(--blue)}.legend .unknown:before{border:1px solid #93a099;background:transparent}.mode-note{font-size:13px;color:var(--muted);min-height:23px;margin-bottom:14px}.phase{margin-top:16px}.phase-head{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:9px}.phase-head h2 span{font-size:11px;color:var(--green);font-weight:700;letter-spacing:.06em;margin-right:9px}.phase-head small{font-size:12px;color:var(--muted)}.flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px}.node{position:relative;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px;min-height:155px}.node:not(:last-child):after{content:"→";position:absolute;right:-21px;top:48%;font-size:18px;color:#81958a;line-height:1}.node-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;font-size:11px;color:var(--muted)}.node-top .step{font-variant-numeric:tabular-nums;font-weight:700;letter-spacing:.07em}.place{padding:1px 6px;background:var(--bg);border-radius:4px}.node p{font-size:12px;color:var(--muted);line-height:1.6;margin-top:7px}.timing{display:inline-block;font-size:12px;font-weight:650;line-height:1.5;margin-top:11px;padding:3px 7px;border-radius:5px;background:var(--amber-bg);color:var(--amber)}.timing.unknown{background:var(--bg);color:var(--muted);font-weight:500}.timing.measured{background:var(--blue-bg);color:var(--blue)}.compute{border:1px solid #cddbd1;background:var(--soft);border-radius:14px;padding:14px 16px 12px}.compute .flow{grid-template-columns:repeat(3,minmax(0,1fr))}.compute .node{min-height:146px;border-color:#d3e0d7}.compute .gpu{border-color:#83aa98;background:#f9fcf9}.total{display:flex;justify-content:space-between;align-items:center;gap:18px;margin-top:11px;font-size:12px;color:var(--muted)}.total strong{color:var(--blue);font-size:15px;white-space:nowrap}.bridge{display:flex;gap:9px;align-items:center;color:var(--muted);font-size:12px;margin:9px 0 0}.bridge:before{content:"↓";font-size:18px;color:var(--green)}.return{padding:8px 12px;margin:10px 0 12px;border:1px dashed #c6d4c9;border-radius:8px;font-size:12px;color:var(--muted);text-align:center}.outputs{display:grid;grid-template-columns:1fr 1fr;gap:24px;position:relative}.output{border:1px solid var(--line);border-radius:12px;background:var(--paper);padding:14px 16px;position:relative}.output:before{content:"↓";position:absolute;top:-22px;left:50%;color:var(--green);font-size:18px}.output-head{display:flex;justify-content:space-between;gap:12px;align-items:center}.output h3{font-size:15px}.output p{font-size:12px;color:var(--muted);margin-top:7px}.chip{font-size:11px;border-radius:4px;padding:1px 6px;background:var(--soft);color:var(--green);white-space:nowrap}.output .timing{margin-top:9px}.keypoint{margin:12px 0 0;padding-left:11px;border-left:3px solid #9dbca8;font-size:13px;color:var(--green)}.milestones{display:grid;grid-template-columns:1.05fr 1.45fr;gap:24px;margin-top:19px}.milestone{border-top:1px solid var(--line);padding-top:12px}.milestone h2{font-size:13px}.milestone p{font-size:12px;color:var(--muted);margin-top:4px}.milestone strong{font-size:22px;line-height:1.3;color:var(--blue);margin-right:7px;font-weight:650;font-variant-numeric:tabular-nums}.finish-flow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:5px 0}.finish-flow span{font-size:12px}.finish-flow .wait{color:var(--amber)}.finish-flow .result{color:var(--blue);font-weight:650}.boundary{background:#eeefe9;border-radius:8px;padding:9px 12px;font-size:12px;color:var(--muted);margin-top:17px}.boundary b{color:var(--ink)}details{font-size:12px;margin-top:16px;border-top:1px solid var(--line);padding-top:12px}summary{cursor:pointer;color:var(--green);font-weight:600}.evidence{display:grid;grid-template-columns:1fr 1fr;gap:25px;margin:12px 0}.evidence h3{font-size:13px}.evidence p,.evidence ul{margin:6px 0;color:var(--muted);padding-left:0}.evidence li{margin:5px 0 5px 17px}.source-links{display:flex;gap:8px 15px;flex-wrap:wrap;margin-top:8px}footer{display:flex;justify-content:space-between;gap:15px;color:var(--muted);font-size:11px;margin-top:16px}.rule{font-size:11px;color:var(--muted)}code{font:12px ui-monospace,SFMono-Regular,Consolas,monospace}noscript{display:block;background:var(--amber-bg);padding:10px;border-radius:8px}
+@media(max-width:900px){main{padding:24px}.flow{gap:18px}.node{padding:13px}.node:not(:last-child):after{right:-17px}.controls{align-items:flex-start;flex-direction:column;gap:10px}.phase-head{align-items:flex-start}.phase-head small{max-width:48%;text-align:right}.total{align-items:flex-start}.snapshot{white-space:normal}}
+@media(max-width:640px){main{padding:22px 18px}header{display:block}h1{font-size:26px}.snapshot{text-align:left;margin-top:12px}.snapshot a{display:inline;margin-left:10px}.flow,.compute .flow{grid-template-columns:1fr;gap:19px}.node{min-height:0;padding:13px 15px}.node:not(:last-child):after{content:"↓";right:auto;left:50%;top:auto;bottom:-20px}.node-top{margin-bottom:6px}.phase-head{display:block}.phase-head small{display:block;max-width:none;text-align:left;margin-top:3px}.total{display:block}.total strong{display:block;margin-bottom:4px}.outputs{grid-template-columns:1fr;gap:23px}.output:before{left:20px}.milestones,.evidence{grid-template-columns:1fr;gap:15px}.switch{width:100%}.switch button{flex:1;padding:8px}.legend{gap:10px}.return{text-align:left}.output-head{align-items:flex-start}footer{display:block}.milestone strong{font-size:21px}.compute{padding:12px}.bridge{margin-top:10px}}
+@media print{body{background:white}main{padding:0;max-width:none}.switch,footer{display:none}.node,.compute,.output,.milestone{break-inside:avoid}.phase{break-inside:avoid}details{display:block}.snapshot a{display:none}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div><div class="eyebrow">ONEAXE VOICE / AUDIO PIPELINE</div><h1>一句话，怎样变成文字</h1><p class="intro">沿音频流看模块、等待与计算，再看文字如何到达输入框。</p></div>
+  <div class="snapshot">2026-10-03 · 源码 825fa5c<br>已预热的桌面流式路径<a href="architecture-map.html">完整架构图 ↗</a></div>
+</header>
+<div class="controls">
+  <div class="switch" role="group" aria-label="选择要查看的流式模式">
+    <button type="button" id="mode-qwen" aria-pressed="true" data-mode="qwen">随听 · Qwen</button>
+    <button type="button" id="mode-r2t2" aria-pressed="false" data-mode="r2t2">即听 · R2T2</button>
+  </div>
+  <div class="legend" aria-label="数字类型"><span class="policy">配置 / 音频时长</span><span class="measured">已有实测</span><span class="unknown">未单独计时</span></div>
+</div>
+<p class="mode-note" id="mode-note" aria-live="polite">已实现 · 单路 · 每累计 2 秒音频识别一次；尾部文字确认后才自动输入。</p>
+<noscript>当前展示 Qwen 流式。启用 JavaScript 后可切换 R2T2；下方证据链接始终可用。</noscript>
+
+<section class="phase" aria-labelledby="input-title">
+  <div class="phase-head"><h2 id="input-title"><span>01 / 音频进入</span>边收音，边向后传递</h2><small>PCM16 · 16 kHz · 单声道</small></div>
+  <div class="flow">
+    <article class="node"><div class="node-top"><span class="step">A · 采集</span><span class="place">桌面 / 音频系统</span></div><h3>DJI Mic → parec</h3><p>F8 开始录音；音频系统持续提供原始 PCM 数据。</p><span class="timing">50 ms 缓冲目标</span><p>这是采集配置，实际设备延迟未测。</p></article>
+    <article class="node"><div class="node-top"><span class="step">B · 门控</span><span class="place">CPU / VAD</span></div><h3>判断语音，组成音频包</h3><p>过滤空闲静音；说话期间持续发送，停顿时触发收尾。</p><span class="timing">20 ms 帧 → 160 ms 包</span><p>240 ms 前置缓存保护开头；VAD 计算未单测。</p></article>
+    <article class="node"><div class="node-top"><span class="step">C · 传输</span><span class="place">桌面 → 服务</span></div><h3>WebSocket → API → worker</h3><p id="transport">Qwen 逐包发送并等待回复；采集任务仍继续录音。</p><span class="timing unknown">网络 / 排队 / IPC 未拆分</span></article>
+    <article class="node"><div class="node-top"><span class="step">D · 累积</span><span class="place">worker / CPU</span></div><h3>凑够一次识别的音频</h3><p id="window">累积音频与历史文字；Qwen 到 30 秒完成窗口收尾并重建状态。</p><span class="timing" id="chunk">每 2 秒音频一次</span><p>这是音频门槛；缓冲处理未单测。</p></article>
+  </div>
+  <div class="bridge">凑够音频后进入识别；录音继续，后续音频进入缓冲。</div>
+</section>
+
+<section class="phase" aria-labelledby="compute-title">
+  <div class="phase-head"><h2 id="compute-title"><span>02 / 识别处理</span>声音 → 特征 → 文字</h2><small>CPU 预处理 + GPU 推理 · 已启用被动等待</small></div>
+  <div class="compute">
+    <div class="flow">
+      <article class="node"><div class="node-top"><span class="step">E · 特征</span><span class="place">CPU / PyTorch</span></div><h3>音频 → 频谱特征</h3><p>STFT / Mel 特征提取。将波形变成模型能读取的数值。</p><span class="timing unknown">特征计算未单独计时</span></article>
+      <article class="node gpu"><div class="node-top"><span class="step">F · 推理</span><span class="place">RTX 4090 / vLLM</span></div><h3>编码音频，生成文字</h3><p>音频编码器理解声音；文字解码器结合上下文生成结果。</p><span class="timing unknown">纯 GPU 时间未单独计时</span></article>
+      <article class="node"><div class="node-top"><span class="step">G · 确认</span><span class="place">worker / CPU</span></div><h3>区分固定文字与候选</h3><p id="stability">首块不固定；后续保留末尾 13 个 token，避免提前输入仍会变化的文字。</p><span class="timing" id="stable-timing">固定时间取决于内容</span><p>文字处理未单独计时。</p></article>
+    </div>
+    <div class="total"><strong id="worker-total">worker 识别步骤 p95 ≈ 228 ms</strong><span id="worker-scope">Qwen：仅统计触发 2 秒识别的步骤。含特征、推理及文字处理，也含解码 / 缓冲开销。</span></div>
+  </div>
+</section>
+
+<section class="phase" aria-labelledby="output-title">
+  <div class="phase-head"><h2 id="output-title"><span>03 / 文字交付</span>同一结果，走两条显示路径</h2><small>结果回传与实际界面绘制未单独计时</small></div>
+  <div class="return">worker → API → WebSocket → 桌面　·　返回 text（固定文字）+ pending（待确认文字）</div>
+  <div class="outputs">
+    <article class="output"><div class="output-head"><h3>固定文字 + 候选 → 悬浮字幕</h3><span class="chip">可先看见</span></div><p>桌面收到结果就更新字幕状态。候选允许变化，暂不自动输入。</p><span class="timing">字幕窗口每 250 ms 轮询状态</span><p>轮询周期是配置值；从结果到屏幕显示的耗时未测。</p></article>
+    <article class="output"><div class="output-head"><h3>固定文字 → 剪贴板 → 目标输入框</h3><span class="chip">顺序追加</span></div><p id="delivery">Qwen 普通文字发布设 250 ms 间隔门槛；停顿 / 结束立即进入交付。</p><span class="timing unknown">xclip + xdotool · 实际粘贴耗时未测</span><p>检查 F8 开始时的目标窗口；焦点变化后只复制。</p></article>
+  </div>
+  <p class="keypoint">悬浮字幕能显示尚未确认的尾字；输入框要等这些字固定后再追加。</p>
+</section>
+
+<div class="milestones">
+  <section class="milestone" aria-labelledby="first-title"><h2 id="first-title">实测里程碑 · 首次收到固定文字</h2><p><strong id="first-fixed">8.13 秒</strong><span id="first-label">Qwen · 单路中文测试</span></p><p>从服务就绪后开始模拟实时采集，到客户端收到首个固定文字。包含前面的等待与处理，不代表每次听写都要这么久，也不等于实际粘贴时刻。</p></section>
+  <section class="milestone" aria-labelledby="finish-title"><h2 id="finish-title">停顿 / F8 停止 · 补齐最后几个字</h2><div class="finish-flow"><span class="wait">静音约 1 秒 → flush</span><span>或 F8 → finish</span><span>→ 尾部识别 → 交付</span></div><p><span class="result" id="finish-result">finish 发出 → 最终回复：实测 96 ms</span></p><p>1 秒是流式默认停顿门槛，期间仍处理音频。这里的收尾实测不含静音等待、发送前排队和界面交付；flush 与 finish 的耗时也不必相同。</p></section>
+</div>
+<p class="boundary"><b>这些数字不能直接相加。</b>20 / 160 / 2000 ms 是嵌套的音频长度；采集、传输与识别可重叠。p95 表示 95% 的被测步骤不超过该值。橙色是配置，蓝色是历史实测，灰色环节尚未拆开测量。</p>
+
+<details>
+  <summary>查看计时边界、源码与证据</summary>
+  <div class="evidence">
+    <div><h3>读图边界</h3><ul>
+      <li>本图是正式代码的桌面流式路径。已预热，不含模型冷启动；本次只整理已有证据。</li>
+      <li>Qwen：2026-10-03 正式回归，单路 120 秒；worker 步骤 p95 227.7805 ms，首固定 8.125195 秒，finish 0.0962 秒。</li>
+      <li>R2T2：同日两路各 120 秒正式回归，展示 PC 中文一路；worker 回复步骤 p95 125.975 ms，首固定 4.0658 秒，finish 0.2192 秒。</li>
+      <li>两份测试的并发量、输入节奏与统计范围不同，不据此计算两种模式的速度倍率。Qwen 取触发识别的音频步骤；R2T2 取报告中的各回复步骤，包含收尾。</li>
+      <li>首固定与收尾由协议测试客户端测量；本轮没有测真实麦克风、字幕绘制或输入框粘贴的完整延迟。</li>
+    </ul></div>
+    <div><h3>源码对应关系</h3><ul>
+      <li>A：capture.py；B：vad.py；C：desktop.py、server.py、worker_client.py。</li>
+      <li>D–G：stream_worker.py（Qwen）；concurrent_worker.py、r2t2_async.py（R2T2）；特征与推理使用已安装的官方依赖。</li>
+      <li>交付：desktop.py、tray.py、paste.py。250 ms 字幕轮询与 Qwen 发布门槛分别运行，不能当作固定增加 500 ms。</li>
+      <li>Qwen 保留的 13 token = 官方回滚 5 + 本项目保护 8；token 不等于汉字。无提前 flush 时，累计 4 秒后才首次有机会固定。</li>
+      <li>240 ms 前置保留是缓存历史音频；不额外等待 240 ms。流式停顿默认 1000 ms；700 ms 属于分段模式。</li>
+    </ul></div>
+  </div>
+  <div class="source-links"><a href="qwen-passive-release-2026-10-03.md">Qwen 发布与验证</a><a href="evidence/qwen-passive-release-2026-10-03.json">Qwen 数值证据</a><a href="r2t2-passive-release-2026-10-03.md">R2T2 发布与验证</a><a href="evidence/r2t2-passive-release-2026-10-03.json">R2T2 数值证据</a><a href="../oneaxe_voice/stream_worker.py">Qwen worker 源码</a><a href="../oneaxe_voice/r2t2_async.py">R2T2 worker 源码</a><a href="../oneaxe_voice/desktop.py">桌面流程源码</a></div>
+</details>
+<footer><span>图中流程均已实现；独立阶段计时尚待补充。配置展示源码默认值，用户设置可能覆盖。</span><span>离线可用 · 非实时监控</span></footer>
+</main>
+<script>
+'use strict';
+const modes = {
+  qwen: {
+    note:'已实现 · 单路 · 每累计 2 秒音频识别一次；尾部文字确认后才自动输入。',
+    transport:'Qwen 逐包发送并等待回复；采集任务仍继续录音。',
+    window:'累积音频与历史文字；Qwen 到 30 秒完成窗口收尾并重建状态。',
+    chunk:'每 2 秒音频一次',
+    stability:'首块不固定；后续保留末尾 13 个 token，避免提前输入仍会变化的文字。',
+    stableTiming:'固定时间取决于内容',
+    workerTotal:'worker 识别步骤 p95 ≈ 228 ms',
+    workerScope:'Qwen：仅统计触发 2 秒识别的步骤。含特征、推理及文字处理，也含解码 / 缓冲开销。',
+    delivery:'Qwen 普通文字发布设 250 ms 间隔门槛；停顿 / 结束立即进入交付。',
+    firstFixed:'8.13 秒',firstLabel:'Qwen · 单路中文测试',
+    finishResult:'finish 发出 → 最终回复：实测 96 ms'
+  },
+  r2t2: {
+    note:'已实现 · 1 路 PC + 1 路手机 · 各会话独立；共享一份模型，异步推进。下图展示 PC 路径。',
+    transport:'R2T2 V1 独立发送、接收与交付；发送额度控制音频积压。',
+    window:'保留滚动音频窗口；超过 16 秒时前移 8 秒，每步结合已有文字。',
+    chunk:'首次 320 ms；随后每 160 ms',
+    stability:'按模型的回滚规则固定前文；通常保留末尾 1 个 token，遇标点时规则可不同。',
+    stableTiming:'每步都可更新；不保证每步出字',
+    workerTotal:'worker 回复步骤 p95 ≈ 126 ms',
+    workerScope:'R2T2：两路测试中的 PC 路；报告包含收尾步骤。含特征、调度、推理及文字处理；不含会话锁前等待。',
+    delivery:'R2T2 固定文字进入独立交付任务；没有 Qwen 的 250 ms 发布门槛。',
+    firstFixed:'4.07 秒',firstLabel:'R2T2 · 双路测试中的 PC 中文',
+    finishResult:'finish 发出 → 最终回复：PC 路实测 219 ms'
+  }
+};
+const fields = {'mode-note':'note',transport:'transport',window:'window',chunk:'chunk',stability:'stability','stable-timing':'stableTiming','worker-total':'workerTotal','worker-scope':'workerScope',delivery:'delivery','first-fixed':'firstFixed','first-label':'firstLabel','finish-result':'finishResult'};
+const buttons = [...document.querySelectorAll('[data-mode]')];
+function showMode(mode,writeHash=true){
+  if(!Object.hasOwn(modes,mode))mode='qwen';
+  for(const [id,key] of Object.entries(fields))document.getElementById(id).textContent=modes[mode][key];
+  for(const button of buttons)button.setAttribute('aria-pressed',String(button.dataset.mode===mode));
+  document.documentElement.dataset.mode=mode;
+  if(writeHash)history.replaceState(null,'','#'+mode);
+}
+for(const button of buttons)button.addEventListener('click',()=>showMode(button.dataset.mode));
+window.addEventListener('hashchange',()=>showMode(location.hash.slice(1),false));
+showMode(location.hash.slice(1),false);
+</script>
+</body>
+</html>
