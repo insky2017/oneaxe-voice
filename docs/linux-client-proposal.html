@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>OneAxe Voice · Linux 轻量客户端方案</title>
+<style>
+:root{--bg:#f5f5f0;--paper:#fff;--ink:#253a32;--muted:#65726c;--line:#dbe2d9;--green:#256751;--green-bg:#e9f3e9;--blue:#315f8c;--blue-bg:#eaf1fa;--amber:#90611d;--amber-bg:#fbf1dc;--soft:#eef0e9}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 system-ui,-apple-system,"Noto Sans CJK SC","Microsoft YaHei",sans-serif}main{max-width:1210px;margin:auto;padding:28px 34px 24px}h1,h2,h3,p{margin:0}h1{font-size:30px;letter-spacing:-.025em;line-height:1.35}h2{font-size:21px;line-height:1.4}h3{font-size:15px}a{color:var(--green);text-underline-offset:3px}button{font:inherit;cursor:pointer}button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid #99bca6;outline-offset:4px}header{display:flex;align-items:flex-start;justify-content:space-between;gap:24px}.eyebrow{font-size:11px;letter-spacing:.12em;font-weight:700;color:var(--green);margin-bottom:7px}.intro{font-size:14px;color:var(--muted);margin-top:9px;max-width:750px}.stamp{font-size:12px;color:var(--muted);text-align:right;white-space:nowrap}.stamp a{display:block;margin-top:7px}.badge{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;padding:2px 7px;font-size:11px;border-radius:5px;font-weight:600}.badge:before{content:"";height:5px;width:5px;border-radius:50%;background:currentColor}.done{color:var(--green);background:var(--green-bg)}.plan{color:var(--blue);background:var(--blue-bg)}.later{color:var(--amber);background:var(--amber-bg)}.legend{display:flex;gap:9px;flex-wrap:wrap;margin-top:18px}nav{position:sticky;top:0;z-index:2;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:12px 0;background:var(--bg);border-bottom:1px solid var(--line);margin:5px 0 22px}nav button{border:0;border-radius:8px;padding:10px;background:transparent;color:var(--muted);font-size:14px;font-weight:600}nav button[aria-selected="true"]{background:var(--ink);color:white}nav button span{font-size:11px;margin-right:7px;opacity:.65}.panel[hidden]{display:none}.panel-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:15px}.panel-head p{margin-top:5px;font-size:13px;color:var(--muted)}.micro{font-size:12px;color:var(--muted)}.topnote{padding:11px 14px;border-left:3px solid var(--blue);background:var(--blue-bg);font-size:13px;margin-bottom:16px}.architecture{display:grid;grid-template-columns:1.13fr .76fr 1.05fr;gap:20px;align-items:stretch}.group{border:1px solid var(--line);border-radius:14px;background:var(--paper);padding:17px}.group.client{border-color:#b6cbe0}.group.server{border-color:#b4d0bc}.group-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}.group-head h3{font-size:16px}.block{border:1px solid var(--line);border-radius:9px;padding:11px 12px;background:#fafbf8}.block h3{font-size:14px}.block p{font-size:12px;color:var(--muted);margin-top:4px}.block+.arrow{margin:4px 0}.arrow{font-size:17px;color:#799486;text-align:center;line-height:1.25}.arrow small{font-size:11px;vertical-align:middle;margin-left:7px;color:var(--muted)}.smallrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}.smallrow .block{padding:9px}.smallrow h3{font-size:12px}.smallrow p{font-size:11px}.group-footer{margin-top:11px;font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:9px}.bridge{display:flex;flex-direction:column;justify-content:center;gap:10px}.bridge .block{background:transparent;text-align:center;border-style:dashed;border-color:#b9c8bd;padding:13px 9px}.bridge h3{font-size:14px}.bridge p{font-size:12px}.wire{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--green);border-bottom:1px solid #bccfc1;padding:7px 2px}.wire b{font-size:20px;line-height:1}.capacity{display:grid;grid-template-columns:1.15fr 1fr;gap:20px;margin-top:16px}.callout{padding:14px 16px;border:1px solid var(--line);border-radius:11px;background:var(--paper)}.callout h3{font-size:14px;margin-bottom:5px}.callout p{font-size:13px;color:var(--muted)}.callout.highlight{background:var(--amber-bg);border-color:#e8d7b2}.capacity-path{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 5px;font-size:12px}.pill{background:var(--paper);border:1px solid #ded8c8;border-radius:6px;padding:3px 8px}.features{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:17px}.features .callout p{font-size:12px}.phase{margin:17px 0}.phase-label{font-size:12px;color:var(--green);font-weight:700;letter-spacing:.03em;margin-bottom:9px}.steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:22px}.step{position:relative;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:13px}.step:not(:last-child):after{position:absolute;right:-19px;top:45%;content:"→";font-size:18px;color:#779181}.step strong{font-size:13px}.step p{font-size:12px;color:var(--muted);margin-top:5px}.step .n{font-size:11px;color:var(--blue);font-weight:700;display:block;margin-bottom:5px}.live{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;background:#eaf0e8;border:1px solid #cfdbcd;border-radius:12px;padding:15px}.lane{background:var(--paper);border-radius:9px;padding:13px}.lane h3{margin-bottom:7px;font-size:14px}.lane p{font-size:12px;color:var(--muted)}.lane .chain{font-size:13px;line-height:1.8;margin-bottom:8px;color:var(--ink)}.finish-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}.terminal{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:13px}.terminal h3{font-size:14px}.terminal p{font-size:12px;color:var(--muted);margin-top:5px}.note{font-size:12px;color:var(--muted);background:var(--soft);padding:10px 12px;border-radius:8px;margin-top:13px}.states{display:flex;gap:7px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:14px}.states span{padding:3px 9px;border:1px solid var(--line);background:var(--paper);border-radius:5px}.states i{font-style:normal;color:var(--muted)}.hostbar{display:flex;justify-content:space-between;gap:18px;align-items:center;background:var(--soft);padding:11px 14px;border-radius:9px;margin-bottom:14px}.hostbar p{font-size:12px;color:var(--muted)}.presets{display:flex;gap:5px;flex-wrap:wrap}.presets button{border:1px solid var(--line);background:white;color:var(--muted);font-size:12px;border-radius:6px;padding:6px 10px}.presets button[aria-pressed="true"]{background:var(--green);border-color:var(--green);color:white}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--paper);margin:10px 0 18px}table{width:100%;border-collapse:collapse;text-align:left;font-size:12px;line-height:1.7}th{background:var(--soft);color:var(--muted);font-weight:600;font-size:12px}th,td{padding:11px 13px;border-bottom:1px solid var(--line);vertical-align:top}tr:last-child td{border-bottom:0}td p{color:var(--muted);margin-top:3px}code{font:12px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}.endpoint{display:block;font-size:12px;margin:5px 0;color:var(--green);word-break:break-word}.verb{display:inline-block;background:var(--blue-bg);color:var(--blue);padding:1px 6px;border-radius:4px;font:700 11px/1.7 ui-monospace,monospace;margin-right:5px}.section-title{display:flex;justify-content:space-between;align-items:baseline;gap:14px;margin-top:19px;margin-bottom:5px}.section-title h3{font-size:15px}.section-title p{font-size:12px;color:var(--muted)}details{margin-top:14px;border:1px solid var(--line);border-radius:9px;padding:10px 13px;background:var(--paper);font-size:12px}summary{cursor:pointer;font-weight:600;color:var(--green)}details p{margin-top:7px;color:var(--muted)}details ul{padding-left:20px;color:var(--muted)}details li{margin:6px 0}.codegrid{display:grid;grid-template-columns:1fr 1fr;gap:15px}pre{background:#f2f4ee;padding:13px;border-radius:7px;overflow:auto;line-height:1.65;color:var(--ink);font-size:12px}.settings-layout{display:grid;grid-template-columns:.9fr 1.1fr;gap:22px;align-items:start}.mock{background:var(--paper);border:1px solid var(--line);border-radius:13px;overflow:hidden}.mock-top{padding:12px 16px;background:var(--soft);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:600}.mock-body{padding:16px}.field{margin-bottom:14px}.field label{display:block;font-size:12px;font-weight:600;margin-bottom:5px}.fieldbox{padding:8px 10px;background:#fafbf8;border:1px solid var(--line);border-radius:7px;font-size:12px;overflow-wrap:anywhere}.field small{font-size:11px;color:var(--muted);display:block;margin-top:4px}.mock-actions{display:flex;gap:8px;margin-top:5px}.mock-action{font-size:12px;padding:6px 12px;border-radius:6px;background:var(--green);color:white}.mock-action.secondary{background:var(--soft);color:var(--ink)}.setting-rules{display:grid;gap:13px}.setting-rules .callout p{font-size:12px}.scope-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:17px}.scope-grid .callout ul{font-size:12px;color:var(--muted);padding-left:17px;margin:9px 0 0}.scope-grid li{margin:5px 0}.review{border:1px solid #c3d4e4;background:var(--blue-bg);border-radius:11px;padding:15px;margin-top:18px}.review p{font-size:13px;margin-top:5px}.review h3{font-size:14px}.links{display:flex;gap:8px 15px;flex-wrap:wrap;margin-top:12px;font-size:12px}footer{border-top:1px solid var(--line);padding-top:14px;margin-top:24px;display:flex;justify-content:space-between;gap:18px;font-size:11px;color:var(--muted)}noscript{display:block;padding:10px;background:var(--amber-bg);font-size:13px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+h1{letter-spacing:0}.changes{margin:18px 0 7px;padding:13px 16px;border-left:4px solid var(--amber);background:var(--amber-bg)}.changes-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:9px}.changes-head h2{font-size:17px}.change-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 20px}.change-grid p{font-size:12px;overflow-wrap:anywhere}.change-grid strong{color:var(--ink)}.changed{color:var(--amber);background:var(--amber-bg)}.auth-flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px;margin-top:13px}.auth-flow .step{min-width:0}.auth-flow .step:after{content:"→"}.auth-flow .step:nth-child(3):after,.auth-flow .step:nth-child(7):after{display:none}.auth-next{grid-column:1/-1;text-align:center;color:var(--green);font-size:12px;line-height:1.4}.auth-flow .step p code{font-size:11px}.public-note{color:var(--amber)!important;font-weight:600}.boundary{border-left-color:var(--amber);background:var(--amber-bg)}
+@media(max-width:950px){main{padding:24px}.architecture{grid-template-columns:1fr .65fr 1fr;gap:12px}.group{padding:13px}.group-head{display:block}.group-head .badge{margin-top:5px}.features,.scope-grid{gap:10px}.settings-layout{grid-template-columns:1fr 1fr}.hostbar{align-items:flex-start;flex-direction:column;gap:10px}.step{padding:11px}}
+@media(max-width:680px){main{padding:21px 16px}header{display:block}h1{font-size:26px}.stamp{text-align:left;white-space:normal;margin-top:12px}.stamp a{display:inline;margin-left:12px}nav{grid-template-columns:repeat(2,1fr);gap:4px}.architecture,.capacity,.features,.live,.finish-grid,.settings-layout,.scope-grid,.codegrid{grid-template-columns:1fr}.bridge{padding:0 10px;gap:5px}.group-head{display:flex}.group-head .badge{margin:0}.steps{grid-template-columns:1fr;gap:20px}.step:not(:last-child):after{content:"↓";right:auto;left:50%;top:auto;bottom:-21px}.panel-head{display:block}.panel-head>.badge{margin-top:8px}.section-title{display:block}.table-wrap table{min-width:650px}.hostbar{align-items:stretch}footer{display:block}.smallrow{grid-template-columns:1fr 1fr}}
+@media print{body{background:white}main{padding:0;max-width:none}nav,.presets,.stamp a,footer{display:none}.panel[hidden]{display:block!important}.panel{break-before:page}.panel:first-of-type{break-before:auto}.group,.callout,.step,.lane,.terminal,.mock{break-inside:avoid}.table-wrap{overflow:visible}.table-wrap table{min-width:0}.architecture{grid-template-columns:1.1fr .7fr 1fr}}
+@media(max-width:680px){.change-grid,.auth-flow{grid-template-columns:1fr}.auth-next{padding:1px 0}.auth-flow .step:after{content:"↓"}.auth-flow .step:nth-child(3):after,.auth-flow .step:nth-child(7):after{display:none}.changes{padding:12px}.changes-head h2{font-size:16px}}
+</style>
+</head>
+<body><main>
+<header><div><div class="eyebrow">ONEAXE VOICE / LINUX CLIENT PROPOSAL</div><h1>轻量 Linux 客户端，连接你的语音服务器</h1><p class="intro">本地负责录音、快捷键与文字输入；服务器负责模型和 GPU 推理。与安卓端共用移动 V1 接口。</p></div><div class="stamp"><span class="badge plan">已安装 · 交付风险待修复</span><br>2026-10-03 · 服务端基线 cdad77c<a href="architecture-map.html">现有服务架构 ↗</a></div></header>
+<div class="legend"><span class="badge done">服务端已有</span><span class="badge plan">Linux 首版开发范围</span><span class="badge changed">本次变更</span><span class="badge later">后续规划</span></div>
+<section class="changes" aria-label="相对原方案的本次变更"><div class="changes-head"><h2>本次变更 · 已审核范围与环境调整</h2><span class="badge changed">2026-10-03 更新</span></div><div class="change-grid">
+  <p><strong>① 服务端冻结：</strong>复用现有代码与移动 V1 API。开发中如需改动服务端，必须先说明必要性并获得用户确认。</p>
+  <p><strong>② 快捷键调整：</strong>Linux 客户端默认 <code>F9</code>，可配置；服务器本机听写继续使用 <code>F8</code>，两个入口独立。</p>
+  <p><strong>③ 新增兼容性调整：</strong>原建议 Rust + GTK4 改为 <strong>Rust + GTK3</strong>。本机 Ubuntu 24.04 / GTK 3.24.41，<code>e15l</code> Ubuntu 20.04 / GTK 3.24.20；两机均无 GTK4，不引入 GTK4 升级。</p>
+  <p><strong>④ 安装与凭据：</strong>本机和 <code>ssh sky@e15l</code> 分别安装验证，每机独立设备 Bearer；下方增加完整鉴权流程。</p>
+  <p><strong>⑤ 公网范围：</strong>仅保留架构与地址规划。本轮不部署公网入口；示例地址不代表公网服务已实现。</p>
+  <p><strong>⑥ 当前状态：</strong>客户端已在两机安装；本机 F9 完整 GTK 输入流程与 10 分钟真实双路已通过。目标卡顿时的剪贴板覆盖缺陷已复现，完整修复仍待处理，不标记全部完成。</p>
+  <p><strong>⑦ 最新验收范围：</strong>用户已接受 <code>e15l</code> 按远程条件做有限测试：安装、鉴权、采集、识别与会话隔离；不要求解锁后的桌面 F9 验收。本机仍验证真实输入，并增加“输入框文字与复制全文逐字一致”的检查。</p>
+  <p><strong>⑧ 交付风险已复现：</strong>目标输入框忙时，后续增量可能覆盖尚未读取的剪贴板。已完成隔离调查；原 F8 桌面交付层修复仍需用户批准。新客户端已串行化手动复制与自动输入，但读取确认仍待处理。</p>
+</div></section>
+<nav role="tablist" aria-label="客户端方案视图"><button id="tab-framework" role="tab" aria-selected="true" aria-controls="framework" data-tab="framework"><span>01</span>工作框架</button><button id="tab-workflow" role="tab" aria-selected="false" aria-controls="workflow" data-tab="workflow" tabindex="-1"><span>02</span>工作流程</button><button id="tab-api" role="tab" aria-selected="false" aria-controls="api" data-tab="api" tabindex="-1"><span>03</span>接口与消息</button><button id="tab-settings" role="tab" aria-selected="false" aria-controls="settings" data-tab="settings" tabindex="-1"><span>04</span>设置与首版范围</button></nav>
+<noscript>当前显示工作框架。启用 JavaScript 可切换其余视图；页面中的演示不会连接任何服务器。</noscript>
+
+<section class="panel" id="framework" role="tabpanel" aria-labelledby="tab-framework">
+<div class="panel-head"><div><h2>一个客户端，两种网络入口</h2><p>独立客户端工程 <code>oneaxe-voice-linux</code>。保留听写体验，模型管理留在服务器端。</p></div><span class="badge changed">新增调整 · Rust + GTK3</span></div>
+<p class="topnote boundary"><strong>服务端代码与 API 冻结：</strong>本轮仅开发客户端并安装验证。任何必要的服务端改动，先向用户说明并确认后再执行。</p>
+<div class="architecture" aria-label="Linux客户端通过HTTPS和WSS连接现有Voice服务端的架构图">
+  <div class="group client"><div class="group-head"><h3>Linux 电脑</h3><span class="badge plan">开发中</span></div>
+    <div class="block"><h3>状态图标 / 小窗口 / 设置</h3><p>开始、停止、取消、复制结果；填写服务器地址与设备凭据。快捷键默认 F9，可配置。</p></div><div class="arrow">↓ <small>单实例状态机</small></div>
+    <div class="block"><h3>麦克风 → 轻量 VAD → 音频队列</h3><p>选择 DJI Mic 或其他输入设备；生成 16 kHz 单声道 PCM，检测停顿。</p></div><div class="arrow">↓ <small>有界队列 · 独立收发</small></div>
+    <div class="block"><h3>原生网络模块 / 移动 V1</h3><p>查询能力、握手、按额度送音频、接收结果、保活；每个客户端有独立凭据。</p></div><div class="arrow">↓ <small>检查会话、序号与固定前缀</small></div>
+    <div class="smallrow"><div class="block"><h3>候选字幕</h3><p>可修订的尾字只预览。</p></div><div class="block"><h3>固定文字</h3><p>X11 顺序粘贴 / 复制。</p></div></div>
+    <p class="group-footer">运行界面与网络逻辑；音频采集可用独立辅助进程。无需本地模型、CUDA、vLLM 或 Python 环境。</p>
+  </div>
+  <div class="bridge"><div class="block"><h3>设置中的服务器根地址</h3><p><code>https://域名[:端口]</code><br>两条 API 路径由 App 自动生成。</p></div>
+    <div class="wire"><span>能力查询 / PCM 音频</span><b aria-hidden="true">→</b></div>
+    <div class="block"><span class="badge done">当前可用入口</span><h3>Tailscale 内网</h3><p>客户端使用系统已有的 Tailscale 连接，访问 <code>.ts.net</code> HTTPS/WSS。</p></div>
+    <div class="block"><span class="badge later">仅规划 · 本轮不实现</span><h3>公网 HTTPS 网关</h3><p>规划兼容同一 V1，仅转发两条识别接口；网关再连接现有受限入口。当前未部署。</p></div>
+    <div class="wire"><b aria-hidden="true">←</b><span>流控 / 固定文字 / 候选</span></div>
+    <p class="micro">连接校验证书与域名；HTTP 和 WS 都携带设备 Bearer。原生网络模块负责连接。</p>
+  </div>
+  <div class="group server"><div class="group-head"><h3>OneAxe Voice 服务器</h3><span class="badge done">已有</span></div>
+    <div class="block"><h3>设备认证 + 移动 V1 入口</h3><p><code>GET capabilities</code><br><code>WS dictation/stream</code><br>与安卓端使用相同契约。</p></div><div class="arrow">↓</div>
+    <div class="block"><h3>会话准入 / 流控 / 取消隔离</h3><p>绑定已就绪模型；独立会话和文字状态，取消只影响本路。</p></div><div class="arrow">↓</div>
+    <div class="block"><h3>R2T2 → vLLM → GPU</h3><p>共享模型权重，执行语音识别；返回固定文字与待确认尾部。</p></div>
+    <div class="block" style="margin-top:15px"><h3>本机 PC 管理入口</h3><p>负责加载、选择与卸载模型，以及签发 / 吊销设备凭据。本机听写 F8 保留；Linux 远端 App 仅查询能力与识别。</p></div>
+    <p class="group-footer">复用现有服务协议；服务端模型、权限及容量规则继续生效。安卓与 Linux 首版均使用 Tailnet；通用 HTTPS 地址属于后续公网规划。</p>
+  </div>
+</div>
+<div class="capacity"><div class="callout highlight"><h3>当前的远端名额由 Linux 和安卓共用</h3><div class="capacity-path"><span class="pill">本机 PC：保留 1 路</span><span>＋</span><span class="pill">Linux 或安卓：共 1 路</span></div><p>即使本机 PC 空闲，Linux 与安卓目前也不能同时听写。增加客户端种类不会自动增加并发容量。两台 Linux 客户端分别安装验证，不意味着新增远端名额。</p></div><div class="callout"><h3>公网地址仅作规划</h3><p>未来公开服务器须提供同一移动 V1 契约，并另行部署有效 TLS 网关和做真实网络验收。当前入口仍限定 Tailnet；本轮不实施公网部署。</p></div></div>
+<div class="features"><div class="callout"><h3>日常操作与快捷键</h3><p>Linux 默认 F9 开始，再按 F9 停止；支持修改。服务器本机 F8 保留。停顿自动收尾、候选字幕、固定文字自动输入。</p></div><div class="callout"><h3>更小的客户端职责</h3><p>只维护音频、会话和文字交付。当前远端支持 R2T2；服务端未就绪时清晰提示。</p></div><div class="callout"><h3>明确的状态</h3><p>未配置、连接检查、可开始、录音中、正在收尾、连接异常。网络连接成功与模型就绪分开显示。</p></div></div>
+</section>
+
+<section class="panel" id="workflow" role="tabpanel" aria-labelledby="tab-workflow" hidden>
+<div class="panel-head"><div><h2>先确认服务，再开始录音</h2><p>一次听写使用一个 WS 会话。音频发送和文字接收独立运行。</p></div><span class="badge plan">Linux 首版流程</span></div>
+<div class="phase"><div class="phase-label">A / 建立连接</div><div class="steps">
+  <div class="step"><span class="n">01 · 配置</span><strong>填写 URL + 设备凭据</strong><p>检测 HTTPS 地址格式、系统证书和鉴权。测试连接调用能力接口，不录音。</p></div>
+  <div class="step"><span class="n">02 · 用户按 F9（默认）</span><strong>重新查询 capabilities</strong><p>按客户端快捷键时记录输入目标；读取协议、模型、名额和音频 / 流控限制。查询不预留名额。</p></div>
+  <div class="step"><span class="n">03 · can_start=true</span><strong>连接 WSS，发送 start</strong><p>携带服务实例与模型代次；连接后 5 秒内发送。状态变化由服务端拒绝。</p></div>
+  <div class="step"><span class="n">04 · 收到 ready</span><strong>绑定会话，打开麦克风</strong><p>核对身份与发送额度；再次检查 F9 开始时的目标，变化则只复制。握手失败不开始收音。</p></div>
+</div><p class="note">若模型未加载、不支持当前模式或名额已满，显示具体原因；Linux 客户端不会替服务器加载或切换模型。</p></div>
+<div class="phase"><div class="phase-label">B / 持续听写 · 三条任务同时运行</div><div class="live">
+  <article class="lane"><h3>① 收音任务</h3><p class="chain">麦克风 → 20 ms VAD 帧<br>→ 80–160 ms PCM 包 → 有界队列</p><p>默认静音约 1 秒时加入 <code>flush</code> 标记；麦克风继续录音。设备断开时停止本轮并保留固定文字。</p></article>
+  <article class="lane"><h3>② 发送任务</h3><p class="chain">等待 flow 额度 → 顺序发音频<br>→ 顺序发 flush / finish</p><p><code>sent + 本帧样本数 ≤ audio_send_limit</code>。未发送音频最多 2 秒；超限明确停止并取消，不静默丢音频。</p></article>
+  <article class="lane"><h3>③ 接收与交付任务</h3><p class="chain">校验身份 + seq + text 前缀<br>→ 候选显示 / 固定文字增量粘贴</p><p><code>flow</code> 更新发送额度；<code>pending</code> 只预览。文字交付另排队，慢粘贴不阻塞接收。</p></article>
+</div><p class="note">每 10 秒发一次 keepalive；默认 30 秒无有效输入会被结束。采集上限与发送额度读取服务能力，当前会话上限为 1 小时。</p></div>
+<div class="phase"><div class="phase-label">C / 收尾与异常</div><div class="finish-grid">
+  <article class="terminal"><h3>再按 F9（默认）：正常结束</h3><p>停止收音 → 发完已采集音频 → <code>finish</code> → 等 <code>final</code> → 交付最后增量 → 回到可开始状态。</p></article>
+  <article class="terminal"><h3>点取消：立即停本轮</h3><p>先关闭本地自动输入通道，再发 <code>cancel</code>；忽略迟到文字，保留已经收到的固定文字。其他客户端继续运行。</p></article>
+  <article class="terminal"><h3>断线 / 模型变化 / 凭据失效</h3><p>停止收音和自动输入，保留已确认文字并显示原因。重新查询状态后，由用户开始新会话；不回放旧音频。</p></article>
+</div></div>
+<div class="states" aria-label="客户端主要状态"><span>未配置</span><i>→</i><span>检查连接</span><i>→</i><span>可开始</span><i>→</i><span>连接会话</span><i>→</i><span>录音中</span><i>→</i><span>收尾中</span><i>→</i><span>可开始 / 异常提示</span></div>
+<details><summary>事件去重与文字交付：两份位置分别保存</summary><p>内存中分别保存“已收到的固定全文”和“交付游标”。当前实现按粘贴键命令成功推进游标，尚未取得目标读取或插入回执。新事件必须匹配实例、模型代次和会话；忽略旧序号，检查固定前缀后仅追加新后缀。</p><p>X11 窗口或可观测焦点变化后改为复制；同窗口内标签页、输入框或光标变化未必可检测，需单独验收。断线、取消、App 重启后不自动补贴。外部输入框不提供可靠确认，首版不承诺任意故障下严格 exactly-once；交付失败时保留全文供手动复制。</p></details>
+</section>
+
+<section class="panel" id="api" role="tabpanel" aria-labelledby="tab-api" hidden>
+<div class="panel-head"><div><h2>两条连接接口，一套双向消息</h2><p>下列接口服务端已实现并冻结；Linux 客户端按现有契约接入。WS 控制消息不另设 REST 地址。</p></div><span class="badge done">移动 V1 · protocol_version = 1</span></div>
+<div class="hostbar"><div><strong style="font-size:13px">服务器地址示例</strong><p>仅切换图中示例，不保存设置、不连接服务器。</p><p class="public-note" data-network-note>本轮安装验证使用 Tailscale 入口；公网示例仅规划，尚未实现。</p></div><div class="presets" role="group" aria-label="接口地址示例"><button type="button" data-server="tailnet" aria-pressed="true">Tailscale 内网</button><button type="button" data-server="public" aria-pressed="false">公网规划示例</button></div></div>
+<div class="table-wrap"><table><caption class="sr-only">客户端调用的 HTTP 和 WebSocket 接口</caption><thead><tr><th style="width:44%">接口</th><th>作用与返回</th><th style="width:21%">调用时机 / 权限</th></tr></thead><tbody>
+<tr><td><span class="verb">GET</span><code>/api/mobile/v1/capabilities</code><code class="endpoint" data-endpoint="capabilities">https://rtx4090.nase-stairs.ts.net:8097/api/mobile/v1/capabilities</code></td><td>查询模型、协议、可开始状态、名额和音频 / 流控参数。<p>关键字段：<code>ready</code>、<code>can_start</code>、<code>unavailable_reason</code>、<code>server_instance_id</code>、<code>model_generation</code>、<code>audio</code>、<code>flow</code>。查询不加载模型，也不占名额。</p></td><td>测试连接、开始听写前、错误后重新检查。<p><code>voice.mobile.read</code></p></td></tr>
+<tr><td><span class="verb">WSS</span><code>/api/mobile/v1/dictation/stream</code><code class="endpoint" data-endpoint="stream">wss://rtx4090.nase-stairs.ts.net:8097/api/mobile/v1/dictation/stream</code></td><td>建立持续听写会话，发送音频和控制，接收文字与流控。<p>一次录音一个连接；先 <code>start → ready</code>，再送音频。只绑定已就绪模型。</p></td><td>用户主动开始后连接。<p><code>voice.mobile.stream</code></p></td></tr>
+</tbody></table></div>
+<p class="note"><b>统一鉴权：</b><code>Authorization: Bearer &lt;device-token&gt;</code>。设备令牌放请求头；不放 URL。网络模块使用原生 WS；当前服务器会拒绝带浏览器 Origin 的 WS 连接。</p>
+<div class="section-title"><h3>完整设备鉴权流程</h3><span class="badge changed">本次补充 · 每机独立</span></div>
+<div class="auth-flow" aria-label="管理员签发、可信传递、密钥环保存、请求头认证、服务器摘要与权限校验、识别权限及吊销轮换流程">
+  <div class="step"><span class="n">01 · 管理员签发</span><strong>现有本机 CLI 配发</strong><p>本机客户端和 e15l 各一枚独立随机 Bearer；使用不同设备名、凭据 ID 与 0600 令牌文件。</p></div>
+  <div class="step"><span class="n">02 · 安全传递</span><strong>可信本机界面 / SSH</strong><p>管理员通过可信界面录入；远端传递仅使用已核对主机身份的 SSH / SCP。不放入 Git、URL、聊天或日志。</p></div>
+  <div class="step"><span class="n">03 · 客户端保存</span><strong>系统 Secret Service 密钥环</strong><p>每台机器保存自己的令牌，绑定服务器地址；普通配置不含秘密。密钥环不可用时仅存当前运行内存。</p></div>
+  <div class="auth-next" aria-hidden="true">↓ 用户主动测试连接或开始听写：客户端从密钥环读取本机凭据 ↓</div>
+  <div class="step"><span class="n">04 · HTTPS / WSS 请求</span><strong>Authorization 请求头</strong><p><code>Authorization: Bearer &lt;device-token&gt;</code> 同时用于 capabilities HTTP 请求和 WS 握手；校验证书与域名。</p></div>
+  <div class="step"><span class="n">05 · 服务端校验</span><strong>摘要、状态与权限</strong><p>服务端仅存令牌摘要及元数据；比对摘要、检查吊销状态与权限。无效返回 401，无所需权限返回 403。</p></div>
+  <div class="step"><span class="n">06 · 限定识别能力</span><strong>可查状态、可识别</strong><p>仅 <code>voice.mobile.read</code> / <code>voice.mobile.stream</code>；不能加载、切换、卸载模型或管理设备。</p></div>
+</div>
+<p class="note"><strong>07 · 吊销 / 轮换：</strong>由管理员通过现有 CLI 操作；旧令牌立即失效，该设备已有移动会话结束，PC 会话不受影响。轮换后的新令牌重新安全传递并更新该机密钥环；Linux 客户端不自行签发或轮换凭据。</p>
+<details><summary>现有 CLI 示例：分别签发、吊销与轮换</summary><p>以下为管理员操作示例，不在打开本页面时执行。两份凭据独立；令牌本身不显示在本文档。</p><pre><code>./bin/oneaxe-voice device issue Linux-local --token-file runtime/linux-local.token
+./bin/oneaxe-voice device issue Linux-e15l --token-file runtime/linux-e15l.token
+./bin/oneaxe-voice device list
+./bin/oneaxe-voice device rotate CREDENTIAL_ID --token-file runtime/linux-next.token
+./bin/oneaxe-voice device revoke CREDENTIAL_ID</code></pre><p><code>--token-file</code> 只创建不存在的 0600 文件，终端仅显示元数据与路径。可信传递完成后按管理员操作流程处理临时令牌文件，不将它们纳入代码或常规日志。</p></details>
+<div class="section-title"><h3>客户端 → 服务器</h3><p>均走上面同一个 WS 连接</p></div>
+<div class="table-wrap"><table><thead><tr><th style="width:14%">消息</th><th style="width:42%">内容</th><th>作用 / 何时使用</th></tr></thead><tbody>
+<tr><td><code>start</code></td><td><code>protocol_version</code>、<code>expected_server_instance_id</code>、<code>expected_model_generation</code>、<code>audio</code></td><td>连接后 5 秒内发一次；申请会话，核对刚查询的模型代次。不能携带 <code>mode</code> 或其他管理字段。</td></tr>
+<tr><td>二进制音频</td><td><code>pcm_s16le / 16000 Hz / mono</code><p>每帧偶数字节；当前 2–5120 字节。</p></td><td>收到 ready 后按流控额度发送；建议每包 80–160 ms，尾包可更短。这里不使用 WAV 文件或 Base64。</td></tr>
+<tr><td><code>flush</code></td><td><code>{"type":"flush","after_audio_samples":N}</code></td><td>停顿时补齐当前句，继续同一会话。必须在之前音频之后发送，N 为累计已发送样本数。</td></tr>
+<tr><td><code>finish</code></td><td><code>{"type":"finish","after_audio_samples":N}</code></td><td>正常停止；等待此前音频及尾部完成，收到 final 后关闭。N 不因 flush 重置。</td></tr>
+<tr><td><code>cancel</code></td><td><code>{"type":"cancel"}</code></td><td>取消本路未完成工作；客户端先停止自动输入，丢弃迟到文字。控制不消耗音频额度。</td></tr>
+<tr><td><code>keepalive</code></td><td><code>{"type":"keepalive"}</code></td><td>每 10 秒维持连接；不触发推理，不改变模型常驻策略。</td></tr>
+</tbody></table></div>
+<div class="section-title"><h3>服务器 → 客户端</h3><p>按身份与序号处理，文字和音频包无需一一对应</p></div>
+<div class="table-wrap"><table><thead><tr><th style="width:14%">事件</th><th style="width:42%">关键字段</th><th>客户端处理</th></tr></thead><tbody>
+<tr><td><code>ready</code></td><td><code>session_id</code>、<code>seq</code>、<code>audio_received_samples</code>、<code>audio_processed_samples</code>、<code>audio_send_limit</code></td><td>绑定会话，设置初始额度，开始收音。查询成功不能替代这个确认。</td></tr>
+<tr><td><code>flow</code></td><td>累计接收 / 已处理样本、<code>audio_send_limit</code></td><td>更新允许发送的累计上限，唤醒发送任务。旧事件不重复增加额度。</td></tr>
+<tr><td><code>partial</code></td><td><code>text</code> 累计固定全文、<code>pending</code> 候选、<code>audio_processed_samples</code></td><td>检查固定全文以前次全文为前缀；只输入新后缀。候选只显示。</td></tr>
+<tr><td><code>final</code></td><td><code>text</code>、<code>pending</code>、<code>reason</code>、<code>complete</code></td><td>正常完成时交付尾字。<code>reason=cancelled</code> 时 <code>complete=false</code>；取消后不再采纳文字。</td></tr>
+<tr><td><code>error</code></td><td><code>code</code>、<code>message</code>、<code>retryable</code>、<code>retry_after_ms</code>、固定 <code>text</code></td><td>停止本轮，保留本地已确认文字，显示具体原因。后续诊断重试不等于自动恢复录音。</td></tr>
+<tr><td><code>keepalive</code></td><td>会话身份、<code>seq</code>、当前音频进度</td><td>确认连接仍活跃；不当作文字更新。</td></tr>
+</tbody></table></div>
+<p class="note">ready 后，事件都带 <code>server_instance_id + model_generation + session_id + seq</code>。seq 递增但可跳号；它是事件序号，不是字数。建会话前失败可返回 <code>session_id:null, seq:0</code>。</p>
+<details><summary>最小 start / partial 示例</summary><div class="codegrid"><pre><code>{
+  "type": "start",
+  "protocol_version": 1,
+  "expected_server_instance_id": "boot-example",
+  "expected_model_generation": "load-example",
+  "audio": {
+    "encoding": "pcm_s16le",
+    "sample_rate": 16000,
+    "channels": 1
+  }
+}</code></pre><pre><code>{
+  "type": "partial",
+  "server_instance_id": "boot-example",
+  "model_generation": "load-example",
+  "session_id": "session-example",
+  "seq": 3,
+  "text": "已经确认的文字。",
+  "pending": "尚未确认",
+  "audio_processed_samples": 5120
+}</code></pre></div></details>
+<details><summary>错误码与 App 的响应</summary><div class="table-wrap"><table><thead><tr><th>错误</th><th>用户看到的状态</th><th>处理</th></tr></thead><tbody>
+<tr><td><code>UNAUTHORIZED / FORBIDDEN</code></td><td>凭据无效或无权限</td><td>停止；检查设置或由管理员重新签发，不自动重试录音。</td></tr>
+<tr><td><code>MODEL_NOT_READY / MODEL_UNSUPPORTED</code></td><td>模型未就绪 / 当前模式未支持</td><td>等待服务器管理员处理；客户端不加载、不切模型。</td></tr>
+<tr><td><code>MODEL_CHANGED</code></td><td>服务器模型已变化</td><td>保留固定文字；重查能力，用户主动开始新会话。</td></tr>
+<tr><td><code>CAPACITY_EXCEEDED</code></td><td>远端名额被占用</td><td>按建议时间重查状态；不在后台录音排队。</td></tr>
+<tr><td><code>INVALID_MESSAGE</code></td><td>音频或协议格式错误</td><td>停止并记录不含录音 / 正文 / 凭据的诊断信息。</td></tr>
+<tr><td><code>FLOW_CONTROL_EXCEEDED / RATE_LIMITED</code></td><td>音频发送超额 / 请求过快</td><td>结束本路；保留文字，提示发送问题。</td></tr>
+<tr><td><code>SESSION_TIMEOUT / SESSION_LIMIT</code></td><td>连接超时 / 本轮达到时限</td><td>用户可重新开始；不重放旧音频。</td></tr>
+<tr><td><code>SERVICE_UNAVAILABLE</code></td><td>服务器暂不可用</td><td>状态诊断按 2 / 4 / 8 秒最多重试三次；录音仍由用户启动。</td></tr>
+<tr><td>TLS / DNS / 网络错误</td><td>证书身份错误 / 无法连接</td><td>保留固定文字；证书身份错误不自动重试、不跳过校验。</td></tr>
+</tbody></table></div></details>
+<details><summary>接口边界与设备凭据的取得</summary><p>本机 Linux 客户端与 e15l 分别使用独立设备凭据，完整配发流程见上方。客户端不复用安卓凭据或本机管理令牌。</p><p>管理员的 <code>GET/POST /api/devices</code>、设备 <code>rotate/revoke</code> 以及模型 <code>prepare/unload/policy</code> 属于本机管理接口，Linux App 不调用。远端连接检查统一用 capabilities；不调用远端 <code>/health</code> 或旧的转写 / 本机 V1 接口。服务端代码与 API 本轮冻结；必要改动须先确认。</p><p>每路输入消息（音频 + 控制）最多 100 条/秒。正常完成 / 取消 close 1000；已建 WS 的错误尽力先发 error，再关闭。完整状态码与契约以移动 V1 文档为准。</p></details>
+<div class="links"><a href="mobile-api-v1.md">完整移动 V1 契约 ↗</a><a href="mobile-deployment.md">服务器入口与凭据操作 ↗</a></div>
+</section>
+
+<section class="panel" id="settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+<div class="panel-head"><div><h2>设置保留日常需要的项目</h2><p>界面草图；下方按钮与字段用于表达方案。仅服务器示例可切换，不会执行连接或保存。</p></div><span class="badge plan">已审核 · 开发中</span></div>
+<div class="settings-layout"><div class="mock"><div class="mock-top"><span>OneAxe Voice · 设置</span><span class="micro">界面示意</span></div><div class="mock-body">
+  <div class="field"><label>服务器地址</label><div class="fieldbox" data-setting-url>https://rtx4090.nase-stairs.ts.net:8097</div><small>首版填写 Tailnet HTTPS 根地址；可带端口。App 自动生成 WSS 地址。</small></div>
+  <div class="presets" role="group" aria-label="设置中的服务器示例"><button type="button" data-server="tailnet" aria-pressed="true">Tailscale 示例</button><button type="button" data-server="public" aria-pressed="false">公网规划示例</button></div>
+  <p class="micro public-note" data-network-note>本轮安装验证使用 Tailscale 入口；公网示例仅规划，尚未实现。</p>
+  <div class="field" style="margin-top:14px"><label>设备凭据</label><div class="fieldbox">由该服务器管理员签发的 Linux 专用令牌</div><small>实际界面遮挡显示，使用系统密钥环保存。</small></div>
+  <div class="field"><label>输入设备</label><div class="fieldbox">DJI Mic / 系统可用麦克风 ▾</div><small>首次选择；设备丢失时提示，不静默切换到另一只麦克风。</small></div>
+  <div class="smallrow"><div class="field"><label>听写快捷键</label><div class="fieldbox">F9 · 可修改</div><small>服务器本机原 F8 保留。</small></div><div class="field"><label>文字输出</label><div class="fieldbox">自动粘贴 / 仅复制</div></div></div>
+  <div class="field"><label>常用开关</label><div class="fieldbox">显示字幕　·　登录后启动（可选）</div></div>
+  <div class="mock-actions" aria-label="拟提供的操作"><span class="mock-action">测试连接</span><span class="mock-action secondary">保存</span></div>
+</div></div><div class="setting-rules">
+  <div class="callout"><h3>地址可换，凭据跟随服务器</h3><p>首版只配置一个活动服务器。首版地址为 <code>*.ts.net</code> HTTPS 域名与可选端口，不含账号、查询参数或自定义路径前缀。通用 HTTPS / 公开服务器属于后续规划，届时需提供同一 V1。</p><p>更换主机或端口后重新填写对应凭据并测试；不把旧令牌发给新地址。录音中先结束会话，再修改服务器配置。</p></div>
+  <div class="callout"><h3>连接检查给出可操作的结果</h3><p>分别显示：地址不可达、证书错误、凭据无效、模型未就绪、模式不支持、名额已满、可开始。显示服务器当前模型名称，不提供远程模型切换按钮。</p></div>
+  <div class="callout"><h3>Linux 桌面适配</h3><p>首版优先 Ubuntu / GNOME / X11：全局快捷键、目标窗口核对、剪贴板粘贴。默认 F9，可配置；冲突时提示修改，服务器本机 F8 保留。</p><p>托盘图标通过 StatusNotifierItem 接入；桌面不支持时保留小窗口。使用 GTK3 界面，悬浮置顶 / 定位在 X11 下验证。Wayland 首版采用普通字幕窗口、窗口按钮和手动复制；全局快捷键与自动输入另行验证。</p></div>
+  <div class="callout"><h3>最小数据保留</h3><p>普通设置写入 XDG 配置目录；凭据写入 Secret Service 密钥环。密钥环不可用时只在本次运行内保存，不回退到明文持久化。</p><p>本轮文字保存在内存供复制；默认不保存录音、不建立转写历史。日志仅保留状态、错误码与耗时。</p></div>
+</div></div>
+<div class="section-title"><h3>实现方式与发布边界</h3><p>已审核开发范围；性能、安装体积与兼容性待实际验证</p></div>
+<p class="topnote boundary"><span class="badge changed">新增技术调整</span> 两台目标机已发现的 GTK 版本分别为本机 3.24.41、e15l 3.24.20，均无 GTK4；采用 Rust + GTK3 兼容现有桌面环境，不升级系统 GTK。e15l 为 Ubuntu 20.04，发布构建需兼容其 GTK 与 glibc 基线，不能直接假设 Ubuntu 24.04 构建的二进制可运行。</p>
+<div class="table-wrap"><table><thead><tr><th>部分</th><th>拟采用方式</th><th>目的</th></tr></thead><tbody>
+<tr><td>主程序</td><td>Rust + GTK3；独立客户端工程，首版提供 .deb（包含系统依赖声明），按 Ubuntu 20.04 兼容基线构建</td><td>适配本机 Ubuntu 24.04 和 e15l Ubuntu 20.04 的现有 GTK3；安装后分别验证。采用 Rust 不代表 GPU 推理会自动变快。</td></tr>
+<tr><td>网络与会话</td><td>异步 HTTP / WS；与 GUI 线程分离；系统证书校验</td><td>复用现有 V1 语义，发送、接收、保活、交付互不阻塞；不增加本地 HTTP 服务。</td></tr>
+<tr><td>音频与 VAD</td><td>首版复用已验证的 parec 采集方式与 WebRTC VAD 规则；按格式输出 PCM</td><td>复用系统 PipeWire / PulseAudio 兼容层；不在客户端提取模型特征。</td></tr>
+<tr><td>桌面输入</td><td>X11 使用 xclip / xdotool；GNOME 自定义快捷键调用 App --toggle，经单实例本地 IPC 分发</td><td>核对目标窗口、顺序追加、不发送回车；可复用行为规范与测试样本。</td></tr>
+</tbody></table></div>
+<div class="scope-grid"><div class="callout"><span class="badge plan">已审核首版范围</span><ul><li>可填写服务器 URL 与独立设备凭据。</li><li>R2T2 流式、停止 / 取消 / 复制。</li><li>麦克风选择、可配置 F9、状态与候选字幕。</li><li>X11 自动粘贴、焦点变化后只复制。</li><li>流控、错误提示与 Secret Service 凭据保存。</li><li>本机与 ssh sky@e15l 安装、分别验证。</li></ul></div><div class="callout"><span class="badge done">冻结并复用的服务能力</span><ul><li>能力查询和移动 V1 双向流。</li><li>每设备 Bearer、吊销与轮换。</li><li>模型代次绑定、固定前缀与序号。</li><li>独立取消；保护已有本机 F8 会话。</li><li>当前 1 PC + 1 远端、仅 R2T2。</li></ul></div><div class="callout"><span class="badge later">后续规划 · 本轮不实现</span><ul><li>公网网关部署与跨公网验收。</li><li>Wayland 全局快捷键和自动输入。</li><li>更多远端同时接入。</li><li>Qwen 远端流式协议与并发支持。</li><li>多服务器切换、长期历史、文字润色。</li></ul></div></div>
+<details><summary>公网接入规划：本轮不部署</summary><p><span class="badge later">仅规划 · 尚未实现</span> 后续客户端可扩展为通用 HTTPS 根地址；首版仅接受 Tailnet 地址，现有服务启动配置使用 <code>.ts.net</code> 证书名。未来可另设公网 HTTPS 反向代理，仅允许两条移动 V1 路径，并通过可达的 Tailnet TLS 入口访问当前后端。</p><p>规划中的网关需要有效证书、WS Upgrade / 长连接支持、保留设备 Authorization、合适的连接限制；额外网关认证不能覆盖设备 Bearer。上游证书和主机名同样校验。</p><p>若未来反代改接服务器 loopback，必须严格限制两条 V1 路由，不得整站映射本机管理接口。直接绑定公网地址则需要另改监听配置，并先获得用户针对服务端变更的确认。这些部署均尚未执行。</p></details>
+<details><summary>双机安装与开发后的验收顺序</summary><ul><li>先测协议：能力检查、握手、额度、序号、固定前缀、finish / cancel / 断线；模拟结果与真实服务器测试分别记录。</li><li>分别在本机 Ubuntu 24.04 / GTK 3.24.41 与 ssh sky@e15l 的 Ubuntu 20.04 / GTK 3.24.20 安装；检查包依赖、程序启动、Secret Service、桌面会话及实际麦克风。安装成功不等于识别与输入验收完成。</li><li>再测真实 Linux：麦克风、停顿补字、默认 F9 及自定义快捷键、候选字幕、复制及 X11 目标变化；服务器本机 F8 保留并单独检查。</li><li>最后测真实双路：服务器本机 PC + 一台 Linux 远端持续至少 10 分钟，确认两端持续出字、无串流、无不断增长的积压；Linux 取消不影响 PC。两台 Linux 分别验证。</li><li>Linux 与安卓互换占用远端名额；第二个远端应明确收到容量不足。公网验收属于后续规划，本轮不执行。</li></ul></details>
+<div class="review"><h3>已审核方案 · 当前开发中</h3><p>独立轻量客户端；单服务器 URL + 每机独立设备凭据；首版 R2T2 / X11 自动输入；默认 F9 可配置、本机 F8 保留。<strong>新增环境调整：Rust + GTK3。</strong> 本机与 e15l 分别安装验证，服务端代码与 API 冻结，必要改动先确认；公网仅规划。</p></div>
+</section>
+<footer><span>客户端已安装；本机正常输入与双路通过，目标卡顿时的交付风险待修复。e15l 按用户认可的远程范围验证；公网仅规划。</span><span><a href="mobile-api-v1.md">接口契约</a> · <a href="mobile-deployment.md">当前部署</a> · <a href="audio-pipeline.html">现有音频流水线</a></span></footer>
+</main>
+<script>
+'use strict';
+const tabs=[...document.querySelectorAll('[data-tab]')];
+function showTab(id,writeHash=true){
+  if(!tabs.some(b=>b.dataset.tab===id))id='framework';
+  for(const b of tabs){const selected=b.dataset.tab===id;b.setAttribute('aria-selected',String(selected));b.tabIndex=selected?0:-1;}
+  for(const p of document.querySelectorAll('.panel'))p.hidden=p.id!==id;
+  if(writeHash)history.replaceState(null,'','#'+id);
+}
+for(const [i,b] of tabs.entries()){
+  b.addEventListener('click',()=>showTab(b.dataset.tab));
+  b.addEventListener('keydown',e=>{let next;if(e.key==='ArrowRight')next=(i+1)%tabs.length;if(e.key==='ArrowLeft')next=(i+tabs.length-1)%tabs.length;if(e.key==='Home')next=0;if(e.key==='End')next=tabs.length-1;if(next!==undefined){e.preventDefault();tabs[next].focus();showTab(tabs[next].dataset.tab);}});
+}
+function showServer(name){
+  const base=name==='public'?'https://voice.example.com':'https://rtx4090.nase-stairs.ts.net:8097';
+  for(const b of document.querySelectorAll('[data-server]'))b.setAttribute('aria-pressed',String(b.dataset.server===name));
+  for(const e of document.querySelectorAll('[data-setting-url]'))e.textContent=base;
+  for(const e of document.querySelectorAll('[data-network-note]'))e.textContent=name==='public'?'公网仅作地址与架构规划；voice.example.com 为占位示例，公网入口尚未实现，本轮不部署。':'本轮安装验证使用 Tailscale 入口；公网示例仅规划，尚未实现。';
+  for(const e of document.querySelectorAll('[data-endpoint]'))e.textContent=e.dataset.endpoint==='capabilities'?base+'/api/mobile/v1/capabilities':base.replace('https://','wss://')+'/api/mobile/v1/dictation/stream';
+}
+for(const b of document.querySelectorAll('[data-server]'))b.addEventListener('click',()=>showServer(b.dataset.server));
+window.addEventListener('hashchange',()=>showTab(location.hash.slice(1),false));
+showTab(location.hash.slice(1),false);
+</script>
+</body></html>

@@ -52,6 +52,7 @@ R2T2 使用一份 GPU 权重和独立会话状态，支持 **1 路 PC + 1 路手
 
 ## 文档
 
+- [Linux 轻量客户端方案（已审核 / 开发中 HTML）](docs/linux-client-proposal.html)：醒目标记本次变更、Rust + GTK3 双机兼容调整、默认可配置 F9（本机 F8 保留）及完整设备鉴权流程；本机与 e15l 安装验证，服务端代码/API 冻结且必要改动须先确认，公网仅规划。
 - [音频流水线与耗时（简版 HTML）](docs/audio-pipeline.html)：从麦克风到字幕和输入框；切换 Qwen / R2T2，区分音频等待、处理耗时及未测环节。
 - [交互式架构与流程图（离线 HTML）](docs/architecture-map.html)：总体关系、听写流程、双路并发、模型生命周期、部署依赖及实现状态；点击节点查看职责与源码。
 - [架构与隔离边界](docs/architecture.md)
