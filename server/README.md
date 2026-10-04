@@ -4,9 +4,7 @@
 
 ## 目录与入口
 
-项目根目录为 `~/work/touzi/OneAxe/oneaxe-voice`，统一使用原 OneAxe Voice Git 仓库；本服务工程位于 `server/`，客户端分别位于 `clients/linux/` 和 `clients/android/`。三部分历史保留在根 Git 中，各自独立构建；Git 操作只在根目录执行。容量研究保留 `.worktrees/server/capacity`，不作为正式服务目录。共享模型继续从 `~/tools/models` 只读加载。
-
-服务端命令和环境操作先进入 `~/work/touzi/OneAxe/oneaxe-voice/server`。根目录及 F8 / F9 入口见 [项目总入口](../README.md)，Linux 安装与使用见 [Linux README](../clients/linux/README.md)，手机工程见 [Android README](../clients/android/README.md)。历史验证文档中的旧路径代表当时的部署位置。
+以下命令均在本目录（仓库中的 `server/`）执行。客户端安装与使用见 [Linux README](../clients/linux/README.md) 和 [Android README](../clients/android/README.md)，工程总览见 [项目入口](../README.md)。
 
 ## 桌面听写
 
@@ -39,7 +37,7 @@
 
 ## 使用
 
-在项目目录运行：
+检查服务状态或识别录音文件：
 
     ./bin/oneaxe-voice health
     ./bin/oneaxe-voice status
@@ -58,9 +56,7 @@ Qwen 流式（`qwen-stream`）与 R2T2（`r2t2`）均已实现统一远端流式
 
 ## 文档
 
-- [Git 整合流程与验收](../docs/git-consolidation-2026-10-04.md) · [此前目录迁移验收](docs/directory-migration-2026-10-04.md)
-
-- [Linux 轻量客户端方案（HTML）](docs/linux-client-proposal.html)：Rust + GTK3 双机兼容、默认可配置 F9（本机 F8 保留）、统一 Qwen / R2T2 能力接入、设备鉴权与新部署目录；本机与 e15l 的验证范围及交付风险分别记录，公网仅规划。
+- [Linux 轻量客户端方案（HTML）](docs/linux-client-proposal.html)：Rust + GTK3、默认可配置 F9、统一 Qwen / R2T2 接入与设备鉴权；公网仅规划。
 - [音频流水线与耗时（简版 HTML）](docs/audio-pipeline.html)：从麦克风到字幕和输入框；切换 Qwen / R2T2，区分音频等待、处理耗时及未测环节。
 - [交互式架构与流程图（离线 HTML）](docs/architecture-map.html)：总体关系、听写流程、双路并发、模型生命周期、部署依赖及实现状态；点击节点查看职责与源码。
 - [架构与隔离边界](docs/architecture.md)

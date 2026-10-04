@@ -8,10 +8,9 @@ V1 发送额度取实际 `ready` / `flow` 的 `audio_send_limit`；能力查询�
 
 ## 当前运行方式
 
-以下命令使用服务端工程目录 `~/work/touzi/OneAxe/oneaxe-voice/server`；仓库也可安装到其他目录，包括带空格的路径。Linux 与 Android 客户端分别在 `clients/linux/`、`clients/android/`，各自独立构建；三者共享根目录 Git，Git 操作先进入根目录。入口见 [项目总入口](../../README.md)、[Linux 客户端](../../clients/linux/README.md)与 [Android 客户端](../../clients/android/README.md)。服务监听地址为 `http://127.0.0.1:8097`。文中的已运行状态、性能测量及历史环境重建示例保留当时路径，仅作历史记录；此次 Git 整合不改变 API 或运行入口。
+以下命令均在仓库的 `server/` 目录执行。服务监听地址为 `http://127.0.0.1:8097`。客户端安装与使用见 [Linux 客户端](../../clients/linux/README.md) 和 [Android 客户端](../../clients/android/README.md)。
 
 ```bash
-cd ~/work/touzi/OneAxe/oneaxe-voice/server
 ./bin/oneaxe-voice health
 ./bin/oneaxe-voice status
 ./bin/oneaxe-voice transcribe /absolute/path/recording.wav
@@ -25,9 +24,7 @@ cd ~/work/touzi/OneAxe/oneaxe-voice/server
 ./bin/oneaxe-voice transcribe ./work/smoke-zh-10s.wav
 ```
 
-`work/` 为未纳入 Git 的本机验证文件。首次识别和空闲卸载后的识别要等待模型加载；本次首次启动测得约 18.66 秒，模型在显存时约 0.93 秒，均为 10 秒音频的样本数据。
-
-修复后复测：进程首次识别约 16.95 秒、热推理约 0.80 秒；空闲卸载后在同一进程重新加载并识别约 3.60 秒。实际耗时随系统缓存与 GPU 负载变化。
+`work/` 中的本机验证文件不随仓库提供，也可使用自己的录音。首次识别和卸载后的识别须等待模型加载，实际耗时随系统缓存与 GPU 负载变化；测量结果见 [验证记录](validation.md)。
 
 输入须为 16-bit PCM WAV、0.1–60 秒、8–48 kHz、单/双声道、最多 12 MiB。可先用 ffmpeg 转换已有录音：
 
@@ -160,18 +157,9 @@ journalctl --user -u oneaxe-voice.service -n 50 --no-pager
 
 ## 环境重建
 
-旧机器曾用以下方式创建独立环境；这是该机器的历史配置示例，不是可直接照搬到任意机器的环境路径。新环境应按本机 CUDA 与 Python 条件单独准备：
+在 `server/` 下准备独立的 `.venv`，按本机 CUDA 与 Python 条件安装依赖。也可从兼容的已有环境克隆，后续依赖操作仅针对 `.venv`。两个流式模式使用独立的 `.venv-stream`，安装入口见 [三模式说明](modes.md)。环境就绪后运行 `./bin/oneaxe-voice init` 初始化本机令牌。
 
-```bash
-conda create \
-  --prefix .venv \
-  --clone ~/tools/miniconda3/envs/qwen3-asr \
-  --offline --yes
-cd ~/tools/oneaxe-voice
-./bin/oneaxe-voice init
-```
-
-环境约 9.8 GB，已验证 torch 和 qwen_asr 从本项目 `.venv` 导入。运行依赖包括 Python 3.11、FastAPI 0.128.0、Starlette 0.50.0、httpx 0.28.1、torch 2.10.0、qwen-asr 0.0.6、python-multipart 0.0.22，以及系统 ffmpeg 和可用 NVIDIA CUDA 驱动。`pyproject.toml` 描述应用依赖；任意新机器的 pip 安装不保证自动匹配 CUDA 驱动，迁移时需要重新验证实际设备。
+已验证的运行依赖包括 Python 3.11、FastAPI 0.128.0、Starlette 0.50.0、httpx 0.28.1、torch 2.10.0、qwen-asr 0.0.6、python-multipart 0.0.22，以及系统 ffmpeg 和 NVIDIA CUDA 驱动。`pyproject.toml` 描述应用依赖；新机器须单独验证 CUDA 可用性。
 
 ## 配置
 

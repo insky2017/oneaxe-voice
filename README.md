@@ -12,46 +12,33 @@
 
 Qwen 流式与 R2T2 当前支持 **1 路 PC + 1 路远端**，Linux 与 Android 共用远端名额。客户端查询 `capabilities` 后绑定 PC 已就绪模型，没有模型选择、加载、切换、卸载或策略权限；远端通过独立设备凭据与 Tailnet HTTPS/WSS 接入。
 
-## 仓库与构建
+## 运行与构建
 
-项目根目录为 `~/work/touzi/OneAxe/oneaxe-voice`，使用原有 [insky2017/oneaxe-voice](https://github.com/insky2017/oneaxe-voice) 仓库和 `master` 主分支。服务端、Linux 与 Android 的历史保留在同一 Git 中；三者分别维护运行环境、构建与安装入口，子目录不另设 `.git`。
+以下命令均从仓库根目录执行。各组件的依赖与安装步骤见上表中的 README；Android 构建需先将 `ANDROID_HOME` 配置为本机 SDK 目录。
 
-Git 操作在根目录执行：
-
-```bash
-cd ~/work/touzi/OneAxe/oneaxe-voice
-git status
-```
-
-服务端命令和环境操作在 `server/` 执行，具体安装与验证条件见[服务端运行说明](server/docs/api.md)：
+服务端状态检查：
 
 ```bash
-cd ~/work/touzi/OneAxe/oneaxe-voice/server
-./bin/oneaxe-voice health
+./server/bin/oneaxe-voice health
 ```
 
-Linux 构建在 `clients/linux/` 执行：
+Linux 构建：
 
 ```bash
-cd ~/work/touzi/OneAxe/oneaxe-voice/clients/linux
-cargo build --release --locked
+(cd clients/linux && cargo build --release --locked)
 ```
 
-Android 构建在 `clients/android/` 执行，使用该工程自己的 Gradle wrapper；`ANDROID_HOME` 按本机 SDK 路径设置：
+Android 构建：
 
 ```bash
-cd ~/work/touzi/OneAxe/oneaxe-voice/clients/android
-ANDROID_HOME="$HOME/tools/android" ./gradlew --offline --no-daemon :app:assembleDebug
+(cd clients/android && ./gradlew --no-daemon :app:assembleDebug)
 ```
-
-容量研究保留在 `.worktrees/server/capacity`，其历史与环境按[整合记录](docs/git-consolidation-2026-10-04.md)管理。正式服务仍从 `server/` 运行；共享权重继续从 `~/tools/models` 只读加载。
 
 ## 关键文档
 
-- [Git 整合流程与验收](docs/git-consolidation-2026-10-04.md) · [此前目录迁移记录](server/docs/directory-migration-2026-10-04.md)
 - [架构与隔离边界](server/docs/architecture.md) · [交互式架构图](server/docs/architecture-map.html)
 - [三模式与模型管理](server/docs/modes.md) · [桌面听写](server/docs/desktop.md)
 - [移动接口 V1](server/docs/mobile-api-v1.md) · [远端部署与设备凭据](server/docs/mobile-deployment.md)
 - [服务端验证记录](server/docs/validation.md) · [Linux 验证记录](clients/linux/docs/validation.md) · [Android 验证记录](clients/android/docs/voice-v1-device-acceptance-2026-10-02.md)
 
-各验证记录只证明其注明的版本、入口和测试范围。Git 整合结果另行记录，不代替部署、真实识别或客户端输入验收。OneAxe Voice 的代码、环境和服务独立于 VPlus；令牌、录音、个人配置和依赖环境不进入 Git。
+验证记录注明各自的版本和测试范围。

@@ -2,7 +2,7 @@
 
 连接 OneAxe Voice 服务器的轻量 Linux 客户端。录音在本机，模型推理在服务器。默认快捷键 **F9**；原有本机服务的 **F8** 保留。
 
-源码目录为 `~/work/touzi/OneAxe/oneaxe-voice/clients/linux`，与 `server/`、`clients/android/` 同属原 OneAxe Voice Git 仓库；完整历史保留，Git 操作只在根目录执行。本工程继续使用独立的 Cargo 构建与安装入口，不包含独立 `.git`。目录约定及共享模型位置见 [项目总入口](../../README.md)，协议与模型控制边界见 [服务端 README](../../server/README.md)，当前仓库核验见 [Git 整合记录](../../docs/git-consolidation-2026-10-04.md)。历史验证记录中的旧路径保留为当时的安装位置。
+本组件使用 Cargo 构建与安装。项目结构见 [项目总入口](../../README.md)，协议与模型控制边界见 [服务端 README](../../server/README.md)。
 
 - [使用与鉴权](docs/usage.md)
 - [实现边界](docs/design.md)
@@ -10,16 +10,15 @@
 - [重复输入调查与待审核修复](docs/duplicate-input-investigation.md)
 - [界面与方案页截图](docs/validation-visual.md)
 
-首版使用 Rust + GTK3，兼容 Ubuntu 20.04 / 24.04 的 GNOME X11。只连接 Tailnet HTTPS/WSS，公网接入留在规划中。客户端只使用现有移动 V1，不调用模型加载、切换或卸载接口。当前服务只提供一个远端名额，Linux 与 Android 共用此名额。
+首版使用 Rust + GTK3，兼容 Ubuntu 20.04 / 24.04 的 GNOME X11；Wayland 使用窗口按钮与手动复制，自动输入以 X11 为支持范围。只连接 Tailnet HTTPS/WSS，公网接入留在规划中。客户端只使用现有移动 V1，不调用模型加载、切换或卸载接口。当前服务只提供一个远端名额，Linux 与 Android 共用此名额。
 
 当前源码已支持 R2T2 与 Qwen 的统一移动 V1 契约。客户端根据服务端发布的协议、音频、流控、就绪和可开始能力工作，模型名称仅用于显示。安装版和真实 Qwen 复验状态见 [验证记录](docs/validation.md)。
 
 ## 构建和安装
 
-需要 Rust 1.89+、GTK3 / D-Bus 开发包，以及 `parec`、`pactl`、`xdotool`、`xclip`、`xprop`（`x11-utils`）。构建依赖由 Cargo.lock 固定。
+需要 Rust 1.89+、GTK3 / D-Bus 开发包，以及 `parec`、`pactl`、`xdotool`、`xclip`、`xprop`（`x11-utils`）和 `gsettings`。构建依赖由 Cargo.lock 固定。以下命令从本组件目录（仓库内 `clients/linux/`）执行：
 
 ```bash
-cd ~/work/touzi/OneAxe/oneaxe-voice/clients/linux
 cargo build --release --locked
 ./scripts/install-user
 oneaxe-voice-linux --show

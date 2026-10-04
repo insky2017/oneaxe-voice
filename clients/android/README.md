@@ -1,50 +1,58 @@
 # OneAxe Voice Android
 
-手机语音客户端源码：`~/work/touzi/OneAxe/oneaxe-voice/clients/android`。由 Pocket 的 `experiments/voice-lab` 提取，现与服务端、Linux 客户端统一由 `oneaxe-voice` 根 Git 管理；本目录保留自己的 Gradle wrapper。手机 App 仍显示 Voice Lab，包名、签名与已配对身份不变。服务端源码位于 [`../../server`](../../server)，手机语音 APK 与 Pocket 网络 App、通知 App 分别维护。
+手机语音客户端，App 显示名为 OneAxe Voice Lab，包名 `com.oneaxe.pocket.voicelab`，当前为独立调试 APK。选中输入框后，用悬浮按钮开始或结束听写，将文字填入原输入框，不自动回车或发送。服务端源码位于 [`../../server`](../../server)，接入说明见 [项目入口](../../README.md)和[服务端 API](../../server/docs/api.md)。
 
-2026-10-04 用户授权整合 Voice 仓库并保留完整历史；Android 本次只更新目录与协作说明并复验现有构建，见[整合复验记录](docs/migration/unified-2026-10-04.md)。[2026-10-02 独立工程迁移](docs/migration/standalone-2026-10-02.md)保留当时路径、Git 映射与构建证据，下文真机结果继续对应各自 APK 基线。
+语音 APK 与 OneAxe Pocket 网络 App、通知 App 分别维护、安装和更新。Voice Lab 使用用户已建立的 Tailnet 网络，自身不启动或管理 VPN。
 
-独立语音 APK，当前用于调试，包名 `com.oneaxe.pocket.voicelab`。目标仍是“选中输入框 → 小悬浮按钮开始/结束 → 原输入框得到文字”，不自动回车或发送。接入工作先读 [OneAxe Voice 仓库入口](../../README.md)与[服务端 API](../../server/docs/api.md)。
+## 功能与边界
 
-用户已明确要求与 OneAxe Pocket 网络 App 长期保持独立：分别安装、更新和调试，不合并。Voice Lab 使用用户已建立的 Tailnet 网络，自身不启动或管理 VPN。
-
-## 功能与真机证据（2026-10-02 APK 基线）
-
-- 已有 **Tailnet 主机与端口配置**。V1 正式识别使用可修改的 DNS 主机 `rtx4090.nase-stairs.ts.net` 与 HTTPS/WSS 端口 `8097`；目前没有裸 IP 产品入口。
-- 用户先自行连接 Pocket/Tailscale；App 只检查连接并显示错误，不启动或重连 VPN。拒绝 localhost、普通局域网/公网目标；不使用 USB 转发、临时代理或本地 SSH。
-- Voice 正式 Tailnet `8097` 入口已部署；[交接记录](../../server/docs/pocket-handoff-2026-10-02.md)证明服务端 TLS、认证、真实 WSS 转写及 PC + 移动双流测试。Voice Lab 已实现能力查询、连续 PCM、固定全文提交和取消/流控；当前修复版新增输入框文本与光标写入确认，**32/32 本地单测通过**。
-- 当前已安装 APK SHA-256 `24c649c0fe73d8f0ad3637f8631f0d1dba0635cee2c191a4418ece59e6ae8405`。**Termux 悬浮草稿框**实时显示听写文字，停止并收到最后结果后可编辑；点击“确认粘贴”才一次填入原终端，不自动回车。32/32 单测与固定音频预览、编辑后粘贴、取消、抽屉/前台变化、真实麦克风、拖动/软键盘及普通框回归已通过，见[悬浮编辑真机记录](docs/voice-termux-overlay-2026-10-02.md)。确认前终端不写入，文字可在浮窗审阅；确认后安全文本保留在剪贴板。普通输入框继续实时分段写入。
-- 前一版 Termux APK SHA-256 `1c26380dd93f83e8345f5d1becac3762b839657fac13f2858070d99ff265b39b` 的 TYPE_NULL/原生粘贴、粘滞 Ctrl/Alt 和换会话验证见[原始兼容记录](docs/voice-termux-compatibility-2026-10-02.md)。仍需保持 Termux 硬件快捷键启用；终端粘贴请求没有通用接收回执。
-- 前一版输入兼容 APK SHA-256 `371b3cb75a6b6f73d44dbbed8674b95e09a029f6b28a402e3db199e1a6b7d323`。Android 13+ 新增辅助功能输入连接，按光标增量提交并读回确认，不切换默认键盘；修复空框 `selection=-1` 误判，以及微信不暴露节点、未知绝对 offset 的适配。Pixel 9 Pro XL / Android 17 上，微信、ChatGPT PWA、X 搜索、Firefox 地址栏、Keep 和 Gemini 均已完成固定音频输入验证；微信另完成真实麦克风回录 88/88。见[兼容性真机记录](docs/voice-input-compatibility-2026-10-02.md)。Android 8–12 保留原节点路径，本轮未做这些系统的真机验证。
-- 前一版 Chrome 输入确认、取消和断网恢复，以及更早 APK 的手机/PC 10 分钟固定音频测试，保留在[Voice V1 真机记录](docs/voice-v1-device-acceptance-2026-10-02.md)；不将历史长流测试写成当前 APK 已重跑。V01–V07 尚未全部通过，旧 WAV 接口仍禁用。
-- “录音检查与回放”可独立使用，不依赖连接，不上传录音；不录音的固定文字输入仍可验证输入适配。
+- 可配置 Tailnet DNS 主机及 HTTPS/WSS 端口，查询服务能力并连续发送 PCM 音频，支持停止、取消和流控。当前部署入口为 `rtx4090.nase-stairs.ts.net:8097`；不提供裸 IP 产品入口。
+- 只通过用户已建立的 Tailnet 直连，拒绝 localhost、普通局域网和公网目标，不使用 USB 转发、临时代理或本地 SSH。
+- 手机仅使用独立设备凭据，不加载、切换或卸载模型。开始前由 PC 选择模型并等待就绪；运行参数和可开始状态以服务端 `capabilities` 为准。Linux 与 Android 共用一个远端名额。
+- 普通输入框实时分段写入，并核对文本与光标；光标、目标窗口或编辑会话变化后停止自动提交。密码框和无法验证的输入类型拒绝听写。
+- Termux 使用可拖动的悬浮草稿框：听写中只预览，停止并收到最终结果后可编辑，点击“确认粘贴”才一次填入原终端。取消或异常不自动粘贴；确认后安全文本保留在剪贴板。草稿仅保存在辅助功能服务内存中，服务重启不保证保留。
+- “录音检查与回放”不依赖连接，不上传录音，离开页面后清理缓存；固定文字输入可独立检查输入适配。
 
 ## 设置与使用
 
-打开 App 的“连接设置”，填写 Tailnet DNS 主机及端口并保存，再检查连接。正式听写使用经系统证书和主机名校验的 HTTPS/WSS；当前没有裸 IP 产品入口。无效配置不覆盖已保存配置。
+1. 自行连接 Pocket/Tailscale，再在 App 的“连接设置”填写 Tailnet DNS 主机及端口并保存。无效配置不覆盖已保存配置。
+2. 填写服务端为手机签发的独立设备凭据并检查连接。不要复制 PC 模型管理令牌。
+3. 授予麦克风权限，并在系统设置中启用 Voice Lab 辅助功能服务。输入使用辅助功能悬浮层，不需另授悬浮窗权限，也不切换默认键盘。
+4. 确认服务端模型就绪，选中目标输入框，用悬浮按钮开始和结束听写。Termux 需在最终结果后主动确认粘贴。
 
-旧 localhost 地址和旧 lab token 在首次打开新版时作废。手机专用凭据可稍后设置，不要复制 PC 模型管理令牌；凭据用 Android Keystore 加密保存、不回显。同端点保存且留空时保留现有凭据，换协议/地址/端口后旧凭据失效，可用“清除手机凭据”单独清除。
+设备凭据使用 Android Keystore 加密保存、不回显。同端点保存且留空时保留现有凭据；换协议、地址或端口后旧凭据失效，可用“清除手机凭据”单独清除。录音、令牌和完整私人转写不得输出到日志或提交仓库。
 
-连接诊断使用设备 Bearer 请求 `GET /api/mobile/v1/capabilities`，走当前应用可用的 VPN Network，检查并固定 Tailnet 解析目标；HTTPS 保留原主机名的 SNI 与系统证书校验，不接受任意证书。不请求远端 `/health`，不使用系统 HTTP 代理、不跟随 HTTP/HTTPS 重定向。失败区分未检测到 VPN、解析失败、连接/端口不可用、TLS 身份或认证失败，以及模型未就绪/不支持/容量不足。能力查询成功仍不等于持续听写或双端 E2E 通过。
+连接诊断使用设备 Bearer 请求 `GET /api/mobile/v1/capabilities`，走当前应用可用的 VPN Network，检查并固定 Tailnet 解析目标。HTTPS/WSS 保留原主机名的 SNI，并校验系统证书和主机名，不接受任意证书。不请求远端 `/health`，不使用系统 HTTP 代理，不跟随重定向。
 
-本地输入实验使用辅助功能悬浮层，不需另授悬浮窗权限。录音检查需要麦克风权限；9 秒手机采集已测 RMS 527.09、峰值 4836，可回放，离开后缓存自动清理。Termux 内置文本输入栏保留此前结果，终端画布的本轮范围与限制见[Termux 记录](docs/voice-termux-compatibility-2026-10-02.md)；其他自定义控件仍需逐项验证，复制草稿不算自动填入通过。
+失败会区分 VPN 未连接、解析失败、端口不可用、TLS 身份或认证失败，以及模型未就绪、不支持或容量不足。断线后不自动重放音频或重新开始，需用户主动发起新会话。
+
+## 兼容限制
+
+- 最低 Android 8.0（API 26）。Android 13+ 使用辅助功能输入连接并读回确认；Android 8–12 保留节点输入路径，现有真机记录未覆盖这些系统。
+- 普通输入框的已有真机证据来自 Pixel 9 Pro XL / Android 17，覆盖微信、ChatGPT PWA、X 搜索、Firefox 地址栏、Keep 和 Gemini 的指定版本及控件；其他自定义编辑器须逐项验证，复制草稿不算自动填入通过。
+- Termux 需启用原生硬件快捷键。终端粘贴没有通用接收回执；Android 8–12、隐藏密码提示、任意 TUI 和硬件快捷键切换会话尚未全面验证。
+- 完整 V01–V07 验收尚未全部通过；双端真实麦克风长流、跨网络及更多故障场景仍有待验项。能力查询或服务端双流成功不能代替手机端到端验证，历史长流结果对应各自 APK。
+- 旧 WAV 接口禁用；`tools/voice_lab_proxy.py`、`tools/pair_device.py` 仅保留为实验源码，不作为正式连接或恢复方式。
 
 ## 构建与检查
 
-从统一仓库中的 Android 目录执行，使用本目录的 wrapper：
+已验证的构建环境为 JDK 21 和 Android SDK API 36。本组件使用 Gradle wrapper（9.6.0）与 Android Gradle Plugin 9.4.0，Java 源码级别为 17。SDK 路径通过 `ANDROID_HOME` 或本地 `local.properties` 的 `sdk.dir` 配置，`local.properties` 不提交仓库。
+
+以下命令从本组件目录（仓库内 `clients/android/`）执行：
 
 ```bash
-cd ~/work/touzi/OneAxe/oneaxe-voice/clients/android
-ANDROID_HOME="$HOME/tools/android" ./gradlew --offline --no-daemon :app:testDebugUnitTest :app:assembleDebug
+./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
 ```
 
-产物：`app/build/outputs/apk/debug/app-debug.apk`，仍为独立 debug APK。2026-10-04 整合复验只覆盖现有本地测试和 APK 构建；未安装新 APK，也未重跑真机或服务端 E2E，详见[整合复验记录](docs/migration/unified-2026-10-04.md)。
+首次构建需联网下载 Gradle 和依赖；缓存齐备时可加 `--offline`。产物为 `app/build/outputs/apk/debug/app-debug.apk`。
 
-`tests/TailnetEndpointTest.java` 是纯 Java 地址边界检查，可与 `TailnetEndpoint.java` 编译后执行。当前 E2E 与 APK 证据见 [连接设置真机记录](tests/tailnet-settings-e2e-2026-10-02.md)。
+`tests/TailnetEndpointTest.java` 是纯 Java 地址边界检查，可与 `app/src/main/java/com/oneaxe/pocket/voicelab/TailnetEndpoint.java` 编译后执行。
 
-## 接口协作与历史证据
+## 接口与验证记录
 
-- [接口交接请求](docs/voice-api-handoff-2026-10-02.md)与[Pocket 回复](docs/voice-api-response-2026-10-02.md)保留协商历史；[正式 V1 契约](../../server/docs/mobile-api-v1.md)和[服务端交接](../../server/docs/pocket-handoff-2026-10-02.md)是当前依据。[客户端预实现记录](docs/voice-v1-client-preparation-2026-10-02.md)保留上线前状态，既有验收见[真机记录](docs/voice-v1-device-acceptance-2026-10-02.md)。
-- [连接、模型与并发复核](docs/voice-connection-review-2026-10-02.md)：旧实现的实际副作用与失败原因。
-- [2026-10-01 真机记录](tests/device-e2e-2026-10-01.md)：保留当时临时 USB 环境下的普通/弱音/静音/中文样本、麦克风回放与输入结果。这些历史结果不代表正式 Tailnet 接入、手机无模型权限或双端并发已完成。
-- `tools/voice_lab_proxy.py`、`tools/pair_device.py` 仅保留为旧实验源码；不再作为手机连接恢复方式，不运行它们来绕过新要求。
+- [正式移动 V1 契约](../../server/docs/mobile-api-v1.md)与[服务端交接](../../server/docs/pocket-handoff-2026-10-02.md)
+- [连接设置真机记录](tests/tailnet-settings-e2e-2026-10-02.md)
+- [普通输入兼容记录](docs/voice-input-compatibility-2026-10-02.md)
+- [Termux 悬浮编辑记录](docs/voice-termux-overlay-2026-10-02.md)与[原始兼容记录](docs/voice-termux-compatibility-2026-10-02.md)
+- [Voice V1 真机记录及待验项](docs/voice-v1-device-acceptance-2026-10-02.md)
+- [连接、模型与并发复核](docs/voice-connection-review-2026-10-02.md)
